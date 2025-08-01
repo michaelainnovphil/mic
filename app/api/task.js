@@ -1,14 +1,15 @@
-import { taskStore } from "@/lib/tasks";
+// pages/api/task.js
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method === "POST") {
-    taskStore.assigned = true;
-    taskStore.completed = false;
-    return res.status(200).json({ message: "Task assigned" });
-  } else if (req.method === "PUT") {
-    taskStore.completed = true;
-    return res.status(200).json({ message: "Task completed" });
-  } else {
-    return res.status(405).end();
+    const { title, description } = req.body || {};
+    if (!title) return res.status(400).json({ error: "Title required" });
+
+    // Simulate DB save here
+    console.log("Saving task:", title, description);
+    return res.status(200).json({ success: true });
   }
+
+  res.setHeader("Allow", ["POST"]);
+  res.status(405).end(`Method ${req.method} Not Allowed`);
 }

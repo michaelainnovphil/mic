@@ -4,10 +4,11 @@ import AzureADProvider from "next-auth/providers/azure-ad";
 const handler = NextAuth({
   providers: [
     AzureADProvider({
-      clientId: "a7803fe0-60e0-4831-a062-a80de4e1bd92", // MUST be a GUID
-      clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
-      tenantId: "a7803fe0-60e0-4831-a062-a80de4e1bd92", // same as directory/tenant ID
-    }),
+  clientId: process.env.AZURE_AD_CLIENT_ID,
+  clientSecret: process.env.AZURE_AD_CLIENT_SECRET,
+  tenantId: process.env.AZURE_AD_TENANT_ID,
+})
+
   ],
   secret: process.env.NEXTAUTH_SECRET,
   session: {
