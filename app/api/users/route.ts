@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/route";
 
-// MS Graph API endpoint to fetch users and their group membership
 const GRAPH_API_USERS = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,id";
 const GRAPH_API_MEMBEROF = (userId: string) => `https://graph.microsoft.com/v1.0/users/${userId}/memberOf`;
 
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
 
   if (!session || !session.accessToken) {
@@ -14,7 +13,6 @@ export async function GET() {
   }
 
   try {
-    // 1. Fetch all users
     const usersRes = await fetch(GRAPH_API_USERS, {
       headers: {
         Authorization: `Bearer ${session.accessToken}`,
@@ -30,7 +28,6 @@ export async function GET() {
 
     const users = usersData.value || [];
 
-    // 2. For each user, get their group memberships
     const usersWithGroups = await Promise.all(
       users.map(async (user: any) => {
         const groupsRes = await fetch(GRAPH_API_MEMBEROF(user.id), {
