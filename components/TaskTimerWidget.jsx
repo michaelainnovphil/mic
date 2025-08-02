@@ -1,171 +1,171 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-const DROPDOWN_OPTIONS = [
+const TASK_TYPES = [
   "Team Huddle",
   "Adhoc",
   "Coffee Break",
   "Lunch Break",
   "Meeting",
+  "Productivity Hours",
 ];
 
+const formatTime = (seconds) => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hrs.toString().padStart(2, "0")}:${mins
+    .toString()
+    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+};
+
 export default function TaskTimerWidget() {
-  const [isVisible, setIsVisible] = useState(false);
-  const [selectedTask, setSelectedTask] = useState("");
-  const [remainingTime, setRemainingTime] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [task, setTask] = useState(null);
+  const [taskType, setTaskType] = useState("");
+  const [timeLeft, setTimeLeft] = useState(0);
+
   const widgetRef = useRef(null);
-  const timerRef = useRef(null);
 
-  // Load from localStorage
+  // Draggable position state
+  const [position, setPosition] = useState({ x: 100, y: 100 });
+  const isDragging = useRef(false);
+  const offset = useRef({ x: 0, y: 0 });
+
   useEffect(() => {
-    const saved = JSON.parse(localStorage.getItem("taskTimer"));
-    if (saved) {
-      setSelectedTask(saved.selectedTask || "");
-      setRemainingTime(saved.remainingTime || 9 * 60 * 60); // 9 hours
-      setIsRunning(saved.isRunning || false);
-      setIsVisible(saved.isVisible || false);
-    } else {
-      setRemainingTime(9 * 60 * 60);
-    }
-  }, []);
+    const updateFromStorage = () => {
+      const stored = localStorage.getItem("activeTask");
+      const timerStartAt = parseInt(localStorage.getItem("timerStartAt"), 10);
 
-  // Save to localStorage
-  useEffect(() => {
-    localStorage.setItem(
-      "taskTimer",
-      JSON.stringify({ selectedTask, remainingTime, isRunning, isVisible })
-    );
-  }, [selectedTask, remainingTime, isRunning, isVisible]);
+      if (stored && timerStartAt) {
+        const parsed = JSON.parse(stored);
+        const elapsed = Math.floor((Date.now() - timerStartAt) / 1000);
+        const remaining = Math.max(9 * 60 * 60 - elapsed, 0);
 
-  // Countdown effect
-  useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        setRemainingTime((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current);
-            setIsRunning(false);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [isRunning]);
-
-  const handleStart = () => {
-    setIsVisible(true);
-    setIsRunning(true);
-  };
-
-  const handleStop = async () => {
-    setIsRunning(false);
-    setIsVisible(false);
-
-    // Save log to backend
-    await fetch("/api/task/log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        task: selectedTask,
-        timeSpent: 9 * 60 * 60 - remainingTime,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-
-    // Reset
-    setRemainingTime(9 * 60 * 60);
-    setSelectedTask("");
-  };
-
-  // Draggable logic
-  useEffect(() => {
-    const widget = widgetRef.current;
-    let offsetX = 0, offsetY = 0, dragging = false;
-
-    const onMouseDown = (e) => {
-      dragging = true;
-      offsetX = e.clientX - widget.offsetLeft;
-      offsetY = e.clientY - widget.offsetTop;
-    };
-
-    const onMouseMove = (e) => {
-      if (dragging) {
-        widget.style.left = `${e.clientX - offsetX}px`;
-        widget.style.top = `${e.clientY - offsetY}px`;
+        if (remaining > 0) {
+          setTask(parsed.task);
+          setTaskType(parsed.taskType || "");
+          setTimeLeft(remaining);
+          setVisible(true);
+        } else {
+          localStorage.removeItem("activeTask");
+          localStorage.removeItem("timerStartAt");
+          setVisible(false);
+        }
       }
     };
 
-    const onMouseUp = () => {
-      dragging = false;
+    updateFromStorage();
+    window.addEventListener("storage", updateFromStorage);
+    return () => window.removeEventListener("storage", updateFromStorage);
+  }, []);
+
+  useEffect(() => {
+    if (!visible || timeLeft <= 0) return;
+
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        const updated = prev - 1;
+        if (updated <= 0) {
+          localStorage.removeItem("activeTask");
+          localStorage.removeItem("timerStartAt");
+          setVisible(false);
+          return 0;
+        }
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [visible, timeLeft]);
+
+  // Drag logic with state-based position
+  const handleMouseDown = (e) => {
+    isDragging.current = true;
+    offset.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
     };
+  };
 
-    widget.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+  const handleMouseMove = (e) => {
+    if (!isDragging.current) return;
+    setPosition({
+      x: e.clientX - offset.current.x,
+      y: e.clientY - offset.current.y,
+    });
+  };
 
+  const handleMouseUp = () => {
+    isDragging.current = false;
+  };
+
+  useEffect(() => {
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
     return () => {
-      widget.removeEventListener("mousedown", onMouseDown);
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
 
-  const formatTime = (seconds) => {
-    const h = String(Math.floor(seconds / 3600)).padStart(2, "0");
-    const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
-    const s = String(seconds % 60).padStart(2, "0");
-    return `${h}:${m}:${s}`;
-  };
+  if (!visible) return null;
 
   return (
-    <>
-      {!isVisible && (
-        <button
-          onClick={handleStart}
-          className="fixed bottom-6 right-6 bg-blue-600 text-white px-4 py-2 rounded shadow"
-        >
-          Start Task
-        </button>
-      )}
+    <div
+      ref={widgetRef}
+      onMouseDown={handleMouseDown}
+      style={{
+        position: "fixed",
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        zIndex: 9999,
+        width: "320px",
+        cursor: "move",
+      }}
+      className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-2xl rounded-xl p-4"
+    >
+      <div className="text-sm text-gray-700 dark:text-gray-200 mb-2">
+        <strong>Task:</strong> {task?.title || "N/A"}
+      </div>
 
-      {isVisible && (
-        <div
-          ref={widgetRef}
-          className="fixed top-20 left-20 bg-white border border-gray-300 shadow-lg p-4 rounded-xl w-80 cursor-move z-50"
-          style={{ zIndex: 9999 }}
-        >
-          <label className="block mb-2 font-medium">Task Type</label>
-          <select
-            value={selectedTask}
-            onChange={(e) => setSelectedTask(e.target.value)}
-            className="w-full p-2 border rounded mb-4"
-          >
-            <option value="">Select...</option>
-            {DROPDOWN_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+      <select
+        value={taskType}
+        onChange={(e) => {
+          const newType = e.target.value;
+          setTaskType(newType);
 
-          <div className="text-center text-2xl font-bold mb-4">
-            {formatTime(remainingTime)}
-          </div>
+          const current = JSON.parse(localStorage.getItem("activeTask") || "{}");
+          localStorage.setItem(
+            "activeTask",
+            JSON.stringify({ ...current, taskType: newType })
+          );
+        }}
+        className="w-full mb-2 p-2 rounded border dark:bg-gray-700 dark:text-white"
+      >
+        <option value="">-- Select Type --</option>
+        {TASK_TYPES.map((type) => (
+          <option key={type} value={type}>
+            {type}
+          </option>
+        ))}
+      </select>
 
-          <button
-            onClick={handleStop}
-            className="w-full bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded"
-          >
-            Stop
-          </button>
-        </div>
-      )}
-    </>
+      <div className="text-2xl font-mono text-center mb-2">
+        ⏳ {formatTime(timeLeft)}
+      </div>
+
+      <button
+        onClick={() => {
+          localStorage.removeItem("activeTask");
+          localStorage.removeItem("timerStartAt");
+          setVisible(false);
+        }}
+        className="w-full bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded"
+      >
+        Stop
+      </button>
+    </div>
   );
 }

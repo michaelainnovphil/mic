@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Header from "@/components/Header";
+import Draggable from "react-draggable";
 
 const TASK_TYPES = [
   "Team Huddle",
@@ -9,6 +10,7 @@ const TASK_TYPES = [
   "Coffee Break",
   "Lunch Break",
   "Meeting",
+  "Productivity Hours",
 ];
 
 const formatTime = (seconds) => {
@@ -28,19 +30,43 @@ export default function TasksPage() {
   const [taskType, setTaskType] = useState("");
   const [timeLeft, setTimeLeft] = useState(9 * 60 * 60); // 9 hours
 
+  const widgetRef = useRef(null);
+
+  // Fetch all tasks
   useEffect(() => {
     fetchTasks();
   }, []);
 
+  // Timer countdown
   useEffect(() => {
-    let timer;
-    if (activeTask && timeLeft > 0) {
-      timer = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
+    const startAt = localStorage.getItem("timerStartAt");
+    if (startAt) {
+      const elapsed = Math.floor((Date.now() - parseInt(startAt)) / 1000);
+      const remaining = Math.max(0, 9 * 60 * 60 - elapsed);
+      setTimeLeft(remaining);
     }
-    return () => clearInterval(timer);
-  }, [activeTask, timeLeft]);
+
+    const interval = setInterval(() => {
+      const startAt = localStorage.getItem("timerStartAt");
+      if (startAt) {
+        const elapsed = Math.floor((Date.now() - parseInt(startAt)) / 1000);
+        const remaining = Math.max(0, 9 * 60 * 60 - elapsed);
+        setTimeLeft(remaining);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Load active task from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem("activeTask");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      setActiveTask(parsed.task);
+      setTaskType(parsed.taskType || "");
+    }
+  }, []);
 
   const fetchTasks = async () => {
     const res = await fetch("/api/task");
@@ -68,15 +94,23 @@ export default function TasksPage() {
   };
 
   const startTask = (task) => {
+    if (!localStorage.getItem("timerStartAt")) {
+      localStorage.setItem("timerStartAt", Date.now().toString());
+    }
+
+    const current = JSON.parse(localStorage.getItem("activeTask")) || {};
+    localStorage.setItem(
+      "activeTask",
+      JSON.stringify({ task, taskType: current.taskType || "" })
+    );
     setActiveTask(task);
-    setTaskType("");
-    setTimeLeft(9 * 60 * 60);
   };
 
   const stopTask = () => {
     setActiveTask(null);
     setTaskType("");
-    setTimeLeft(9 * 60 * 60);
+    localStorage.removeItem("activeTask");
+    // Timer remains running — not cleared here!
   };
 
   return (
@@ -137,37 +171,42 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Floating Widget */}
+      {/* Draggable Floating Widget */}
       {activeTask && (
-        <div className="fixed bottom-6 right-6 w-80 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-2xl rounded-xl p-4 z-50">
-          <div className="text-sm text-gray-700 dark:text-gray-200 mb-2">
-            <strong>Task:</strong> {activeTask.title}
-          </div>
-
-          <select
-            value={taskType}
-            onChange={(e) => setTaskType(e.target.value)}
-            className="w-full mb-2 p-2 rounded border dark:bg-gray-700 dark:text-white"
+        <Draggable bounds="body" nodeRef={widgetRef}>
+          <div
+            ref={widgetRef}
+            className="fixed bottom-6 right-6 w-80 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-2xl rounded-xl p-4 z-50 cursor-move"
           >
-            <option value="">-- Select Type --</option>
-            {TASK_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
+            <div className="text-sm text-gray-700 dark:text-gray-200 mb-2">
+              <strong>Task:</strong> {activeTask.title}
+            </div>
 
-          <div className="text-2xl font-mono text-center mb-2">
-            ⏳ {formatTime(timeLeft)}
+            <select
+              value={taskType}
+              onChange={(e) => setTaskType(e.target.value)}
+              className="w-full mb-2 p-2 rounded border dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">-- Select Type --</option>
+              {TASK_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+
+            <div className="text-2xl font-mono text-center mb-2">
+              ⏳ {formatTime(timeLeft)}
+            </div>
+
+            <button
+              onClick={stopTask}
+              className="w-full bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded"
+            >
+              Stop
+            </button>
           </div>
-
-          <button
-            onClick={stopTask}
-            className="w-full bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded"
-          >
-            Stop
-          </button>
-        </div>
+        </Draggable>
       )}
     </div>
   );
