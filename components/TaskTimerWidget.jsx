@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
-import axios from "axios";
 
 const TASK_TYPES = [
   "Team Huddle",
@@ -23,7 +21,6 @@ const formatTime = (seconds) => {
 };
 
 export default function TaskTimerWidget() {
-  const { data: session } = useSession();
   const [visible, setVisible] = useState(false);
   const [task, setTask] = useState(null);
   const [taskType, setTaskType] = useState("");
@@ -31,6 +28,7 @@ export default function TaskTimerWidget() {
 
   const widgetRef = useRef(null);
 
+  // Draggable position state
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const isDragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
@@ -82,6 +80,7 @@ export default function TaskTimerWidget() {
     return () => clearInterval(interval);
   }, [visible, timeLeft]);
 
+  // Drag logic with state-based position
   const handleMouseDown = (e) => {
     isDragging.current = true;
     offset.current = {
@@ -110,58 +109,6 @@ export default function TaskTimerWidget() {
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
-
-  useEffect(() => {
-    const fetchMeetings = async () => {
-      try {
-        const now = new Date();
-        const start = new Date(now);
-        start.setHours(8, 30, 0, 0);
-        const end = new Date(now);
-        end.setHours(17, 30, 0, 0);
-
-        const res = await axios.get("/api/graph/calendar", {
-          params: {
-            start: start.toISOString(),
-            end: end.toISOString(),
-          },
-          headers: {
-            Authorization: `Bearer ${session?.accessToken}`,
-          },
-        });
-
-        const events = res.data.value;
-
-        if (events.length > 0) {
-          const activeMeeting = events.find((event) => {
-            const startTime = new Date(event.start.dateTime).getTime();
-            const endTime = new Date(event.end.dateTime).getTime();
-            const now = Date.now();
-            return now >= startTime && now <= endTime;
-          });
-
-          if (activeMeeting && !localStorage.getItem("activeTask")) {
-            const startTime = Date.now();
-            localStorage.setItem("activeTask", JSON.stringify({
-              task: { title: activeMeeting.subject },
-              taskType: "Meeting",
-            }));
-            localStorage.setItem("timerStartAt", `${startTime}`);
-            setTask({ title: activeMeeting.subject });
-            setTaskType("Meeting");
-            setTimeLeft(9 * 60 * 60);
-            setVisible(true);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch calendar events", err);
-      }
-    };
-
-    if (session?.accessToken) {
-      fetchMeetings();
-    }
-  }, [session?.accessToken]);
 
   if (!visible) return null;
 
