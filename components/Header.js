@@ -6,8 +6,7 @@ import React, { useEffect, useState } from "react";
 
 const Header = () => {
   const router = useRouter();
-  const [token, setToken] = useState("");
-  const [name, setName] = useState("");
+
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -63,10 +62,7 @@ const Header = () => {
               >
                 Dashboard
               </Link>
-              
             </>
-          
-
         </nav>
       </div>
     </header>

@@ -1,11 +1,34 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/route";
+import type { NextRequest } from "next/server";
 
-const GRAPH_API_USERS = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,id";
-const GRAPH_API_MEMBEROF = (userId: string) => `https://graph.microsoft.com/v1.0/users/${userId}/memberOf`;
+// Graph API endpoints
+const GRAPH_API_USERS =
+  "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,id";
 
-export async function GET(req: Request) {
+const GRAPH_API_MEMBEROF = (userId: string) =>
+  `https://graph.microsoft.com/v1.0/users/${userId}/memberOf`;
+
+// Types for users and groups
+interface GraphUser {
+  id: string;
+  displayName?: string;
+  mail?: string;
+  userPrincipalName?: string;
+  jobTitle?: string;
+}
+
+interface GraphGroup {
+  displayName?: string;
+}
+
+interface GraphApiResponse<T> {
+  value: T[];
+}
+
+// GET handler
+export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
 
   if (!session || !session.accessToken) {
@@ -19,7 +42,7 @@ export async function GET(req: Request) {
       },
     });
 
-    const usersData = await usersRes.json();
+    const usersData: GraphApiResponse<GraphUser> = await usersRes.json();
 
     if (!usersRes.ok) {
       console.error("Failed to fetch users:", usersData);
@@ -29,21 +52,21 @@ export async function GET(req: Request) {
     const users = usersData.value || [];
 
     const usersWithGroups = await Promise.all(
-      users.map(async (user: any) => {
+      users.map(async (user) => {
         const groupsRes = await fetch(GRAPH_API_MEMBEROF(user.id), {
           headers: {
             Authorization: `Bearer ${session.accessToken}`,
           },
         });
 
-        const groupsData = await groupsRes.json();
+        const groupsData: GraphApiResponse<GraphGroup> = await groupsRes.json();
 
         let groupNames: string[] = [];
 
-        if (groupsRes.ok && groupsData.value) {
+        if (groupsRes.ok && Array.isArray(groupsData.value)) {
           groupNames = groupsData.value
-            .filter((g: any) => g.displayName)
-            .map((g: any) => g.displayName);
+            .filter((g) => g.displayName)
+            .map((g) => g.displayName as string);
         }
 
         return {
