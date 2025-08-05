@@ -63,13 +63,12 @@ export default function TaskTimerWidget({ activeTask }) {
     }
 
     // Set new task but don't reset timer
-    setTask(activeTask.task);
-    setTaskType(activeTask.taskType || "");
     prevTaskRef.current = {
-      title: activeTask.task?.title,
-      type: activeTask.taskType || "",
-      startTime: new Date(),
-    };
+    title: activeTask.task?.title,
+    type: activeTask.taskType || taskType, // use either from activeTask or current state
+    startTime: new Date(),
+  };
+
     setVisible(true);
   }, [activeTask]);
 
