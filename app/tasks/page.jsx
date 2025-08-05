@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Header from "@/components/Header";
-import Draggable from "react-draggable";
+import TaskTimerWidget from "@/components/TaskTimerWidget";
+import * as XLSX from "xlsx"; // ✅ Needed for export
 
 const TASK_TYPES = [
   "Team Huddle",
@@ -29,7 +30,8 @@ export default function TasksPage() {
   const [activeTask, setActiveTask] = useState(null);
   const [taskType, setTaskType] = useState("");
   const [timeLeft, setTimeLeft] = useState(9 * 60 * 60); // 9 hours
-
+  const previousTaskRef = useRef(null);
+  const taskLogsRef = useRef([]);
   const widgetRef = useRef(null);
 
   // Fetch all tasks
@@ -68,6 +70,20 @@ export default function TasksPage() {
     }
   }, []);
 
+  // ✅ Auto export at 5:30 PM
+  useEffect(() => {
+    const now = new Date();
+    const msUntilEndOfDay =
+      new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 30, 0) - now;
+
+    if (msUntilEndOfDay > 0) {
+      const timeout = setTimeout(() => {
+        exportLogsToExcel();
+      }, msUntilEndOfDay);
+      return () => clearTimeout(timeout);
+    }
+  }, []);
+
   const fetchTasks = async () => {
     const res = await fetch("/api/task");
     const data = await res.json();
@@ -93,24 +109,67 @@ export default function TasksPage() {
     }
   };
 
-  const startTask = (task) => {
-    if (!localStorage.getItem("timerStartAt")) {
-      localStorage.setItem("timerStartAt", Date.now().toString());
-    }
+  const handleStart = (task) => {
+  localStorage.setItem("currentTask", JSON.stringify(task));
+  window.dispatchEvent(new Event("storage")); // manually trigger storage event
+};
 
-    const current = JSON.parse(localStorage.getItem("activeTask")) || {};
-    localStorage.setItem(
-      "activeTask",
-      JSON.stringify({ task, taskType: current.taskType || "" })
-    );
-    setActiveTask(task);
+
+  const startTask = (task) => {
+  const now = Date.now();
+  const prev = previousTaskRef.current;
+
+  if (prev && prev.task && prev.startedAt) {
+    const secondsSpent = Math.floor((now - prev.startedAt) / 1000);
+    taskLogsRef.current.push({
+      title: prev.task.title,
+      type: prev.taskType || "",
+      secondsSpent,
+      startedAt: new Date(prev.startedAt).toLocaleTimeString(),
+      endedAt: new Date(now).toLocaleTimeString(),
+    });
+  }
+
+  if (!localStorage.getItem("timerStartAt")) {
+    localStorage.setItem("timerStartAt", now.toString());
+  }
+
+  const current = JSON.parse(localStorage.getItem("activeTask")) || {};
+  const taskPayload = { task, taskType: current.taskType || "" };
+
+  localStorage.setItem("activeTask", JSON.stringify(taskPayload));
+  setActiveTask(taskPayload); // ✅ This ensures TaskTimerWidget receives the correct shape
+
+  previousTaskRef.current = {
+    task,
+    taskType: current.taskType || "",
+    startedAt: now,
   };
+};
+
 
   const stopTask = () => {
     setActiveTask(null);
     setTaskType("");
     localStorage.removeItem("activeTask");
     // Timer remains running — not cleared here!
+  };
+
+  // ✅ Manual export button support
+  const exportLogsToExcel = () => {
+    const data = taskLogsRef.current.map((log) => ({
+      Task: log.title,
+      Type: log.type,
+      "Time Spent (min)": (log.secondsSpent / 60).toFixed(2),
+      "Started At": log.startedAt,
+      "Ended At": log.endedAt,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Task Logs");
+
+    XLSX.writeFile(wb, `task_logs_${new Date().toLocaleDateString()}.xlsx`);
   };
 
   return (
@@ -159,6 +218,7 @@ export default function TasksPage() {
                     </p>
                   )}
                 </div>
+
                 <button
                   onClick={() => startTask(task)}
                   className="bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded"
@@ -171,43 +231,8 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Draggable Floating Widget */}
-      {activeTask && (
-        <Draggable bounds="body" nodeRef={widgetRef}>
-          <div
-            ref={widgetRef}
-            className="fixed bottom-6 right-6 w-80 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-2xl rounded-xl p-4 z-50 cursor-move"
-          >
-            <div className="text-sm text-gray-700 dark:text-gray-200 mb-2">
-              <strong>Task:</strong> {activeTask.title}
-            </div>
-
-            <select
-              value={taskType}
-              onChange={(e) => setTaskType(e.target.value)}
-              className="w-full mb-2 p-2 rounded border dark:bg-gray-700 dark:text-white"
-            >
-              <option value="">-- Select Type --</option>
-              {TASK_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-
-            <div className="text-2xl font-mono text-center mb-2">
-              ⏳ {formatTime(timeLeft)}
-            </div>
-
-            <button
-              onClick={stopTask}
-              className="w-full bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded"
-            >
-              Stop
-            </button>
-          </div>
-        </Draggable>
-      )}
+      {/* ✅ Timer widget appears based on activeTask */}
+      <TaskTimerWidget activeTask={activeTask} />
     </div>
   );
 }

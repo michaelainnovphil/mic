@@ -1,171 +1,194 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import Draggable from "react-draggable";
+import * as XLSX from "xlsx";
 
-const TASK_TYPES = [
-  "Team Huddle",
-  "Adhoc",
-  "Coffee Break",
-  "Lunch Break",
-  "Meeting",
-  "Productivity Hours",
-];
-
-const formatTime = (seconds) => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${hrs.toString().padStart(2, "0")}:${mins
-    .toString()
-    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
-
-export default function TaskTimerWidget() {
+export default function TaskTimerWidget({ activeTask }) {
+  const [timeLeft, setTimeLeft] = useState(9 * 60 * 60); // 9 hours
   const [visible, setVisible] = useState(false);
   const [task, setTask] = useState(null);
   const [taskType, setTaskType] = useState("");
-  const [timeLeft, setTimeLeft] = useState(0);
+  const intervalRef = useRef(null);
+  const prevTaskRef = useRef(null);
+  const logsRef = useRef([]);
+  const timerStartAtRef = useRef(Date.now());
+  const nodeRef = useRef(null);
 
-  const widgetRef = useRef(null);
+  const formatTime = (seconds) => {
+    const hrs = String(Math.floor(seconds / 3600)).padStart(2, "0");
+    const mins = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+    const secs = String(seconds % 60).padStart(2, "0");
+    return `${hrs}:${mins}:${secs}`;
+  };
 
-  // Draggable position state
-  const [position, setPosition] = useState({ x: 100, y: 100 });
-  const isDragging = useRef(false);
-  const offset = useRef({ x: 0, y: 0 });
-
+  // Start/resume timer
   useEffect(() => {
-    const updateFromStorage = () => {
-      const stored = localStorage.getItem("activeTask");
-      const timerStartAt = parseInt(localStorage.getItem("timerStartAt"), 10);
+    const stored = localStorage.getItem("taskTimerState");
+    if (stored) {
+      const { task: storedTask, taskType, timerStartAt } = JSON.parse(stored);
+      const elapsed = Math.floor((Date.now() - timerStartAt) / 1000);
+      const remaining = Math.max(9 * 60 * 60 - elapsed, 0);
 
-      if (stored && timerStartAt) {
-        const parsed = JSON.parse(stored);
-        const elapsed = Math.floor((Date.now() - timerStartAt) / 1000);
-        const remaining = Math.max(9 * 60 * 60 - elapsed, 0);
-
-        if (remaining > 0) {
-          setTask(parsed.task);
-          setTaskType(parsed.taskType || "");
-          setTimeLeft(remaining);
-          setVisible(true);
-        } else {
-          localStorage.removeItem("activeTask");
-          localStorage.removeItem("timerStartAt");
-          setVisible(false);
-        }
-      }
-    };
-
-    updateFromStorage();
-    window.addEventListener("storage", updateFromStorage);
-    return () => window.removeEventListener("storage", updateFromStorage);
+      setTask(storedTask);
+      setTaskType(taskType || "");
+      setTimeLeft(remaining);
+      setVisible(true);
+      timerStartAtRef.current = timerStartAt;
+    }
   }, []);
 
+  // When active task changes
   useEffect(() => {
-    if (!visible || timeLeft <= 0) return;
+    if (!activeTask) return;
 
-    const interval = setInterval(() => {
+    const stored = localStorage.getItem("taskTimerState");
+    const { task: storedTask } = stored ? JSON.parse(stored) : {};
+
+    if (storedTask?.title === activeTask.task?.title) {
+      // Same task, ignore
+      return;
+    }
+
+    // Log previous task duration
+    const prev = prevTaskRef.current;
+    if (prev) {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - prev.startTime) / 1000);
+      logsRef.current.push({
+        task: prev.title,
+        taskType: prev.type,
+        duration: formatTime(durationSeconds),
+      });
+    }
+
+    // Set new task but don't reset timer
+    setTask(activeTask.task);
+    setTaskType(activeTask.taskType || "");
+    prevTaskRef.current = {
+      title: activeTask.task?.title,
+      type: activeTask.taskType || "",
+      startTime: new Date(),
+    };
+    setVisible(true);
+  }, [activeTask]);
+
+  // Store current task & time
+  useEffect(() => {
+    if (!task) return;
+
+    localStorage.setItem(
+      "taskTimerState",
+      JSON.stringify({
+        task,
+        taskType,
+        timerStartAt: timerStartAtRef.current,
+      })
+    );
+  }, [task, taskType]);
+
+  // Countdown timer
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
       setTimeLeft((prev) => {
-        const updated = prev - 1;
-        if (updated <= 0) {
-          localStorage.removeItem("activeTask");
-          localStorage.removeItem("timerStartAt");
-          setVisible(false);
+        if (prev <= 1) {
+          clearInterval(intervalRef.current);
           return 0;
         }
-        return updated;
+        return prev - 1;
       });
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [visible, timeLeft]);
-
-  // Drag logic with state-based position
-  const handleMouseDown = (e) => {
-    isDragging.current = true;
-    offset.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    };
-  };
-
-  const handleMouseMove = (e) => {
-    if (!isDragging.current) return;
-    setPosition({
-      x: e.clientX - offset.current.x,
-      y: e.clientY - offset.current.y,
-    });
-  };
-
-  const handleMouseUp = () => {
-    isDragging.current = false;
-  };
-
-  useEffect(() => {
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
+    return () => clearInterval(intervalRef.current);
   }, []);
 
-  if (!visible) return null;
+  // Export at 5:30 PM
+  useEffect(() => {
+    const now = new Date();
+    const endOfDay = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      17,
+      30,
+      0
+    );
+    const msUntilEnd = endOfDay - now;
+
+    if (msUntilEnd > 0) {
+      const timeout = setTimeout(exportLogsToExcel, msUntilEnd);
+      return () => clearTimeout(timeout);
+    }
+  }, []);
+
+  const exportLogsToExcel = () => {
+    const wsData = [["Task", "Type", "Duration"]];
+    logsRef.current.forEach((log) => {
+      wsData.push([log.task, log.taskType, log.duration]);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
+    XLSX.writeFile(workbook, "task_logs.xlsx");
+  };
+
+  const handleStop = () => {
+    setVisible(false);
+    clearInterval(intervalRef.current);
+    localStorage.removeItem("taskTimerState");
+  };
+
+  if (!visible || !task) return null;
 
   return (
-    <div
-      ref={widgetRef}
-      onMouseDown={handleMouseDown}
-      style={{
-        position: "fixed",
-        left: `${position.x}px`,
-        top: `${position.y}px`,
-        zIndex: 9999,
-        width: "320px",
-        cursor: "move",
-      }}
-      className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-2xl rounded-xl p-4"
-    >
-      <div className="text-sm text-gray-700 dark:text-gray-200 mb-2">
-        <strong>Task:</strong> {task?.title || "N/A"}
-      </div>
-
-      <select
-        value={taskType}
-        onChange={(e) => {
-          const newType = e.target.value;
-          setTaskType(newType);
-
-          const current = JSON.parse(localStorage.getItem("activeTask") || "{}");
-          localStorage.setItem(
-            "activeTask",
-            JSON.stringify({ ...current, taskType: newType })
-          );
-        }}
-        className="w-full mb-2 p-2 rounded border dark:bg-gray-700 dark:text-white"
+    <Draggable nodeRef={nodeRef}>
+      <div
+        ref={nodeRef}
+        className="fixed z-50 bottom-4 right-4 bg-white shadow-xl rounded-2xl p-4 w-80 border border-gray-300"
       >
-        <option value="">-- Select Type --</option>
-        {TASK_TYPES.map((type) => (
-          <option key={type} value={type}>
-            {type}
-          </option>
-        ))}
-      </select>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="font-bold text-lg">Task Timer</h2>
+          <button
+            onClick={exportLogsToExcel}
+            className="text-sm bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
+          >
+            Export
+          </button>
+        </div>
 
-      <div className="text-2xl font-mono text-center mb-2">
-        ⏳ {formatTime(timeLeft)}
+        <p className="text-sm text-gray-500 mb-1">
+          <strong>Task:</strong> {task.title}
+        </p>
+
+        <label className="block text-sm text-gray-500 mb-2">
+          <strong>Type:</strong>
+          <select
+            className="mt-1 w-full border border-gray-300 rounded px-2 py-1"
+            value={taskType}
+            onChange={(e) => setTaskType(e.target.value)}
+          >
+            <option value="">Select Type</option>
+            <option value="Meeting">Meeting</option>
+            <option value="Adhoc">Adhoc</option>
+            <option value="Lunch Break">Lunch Break</option>
+            <option value="Coffee Break">Coffee Break</option>
+            <option value="Productivity Hours">Productivity Hours</option>
+          </select>
+        </label>
+
+        <div className="text-center text-2xl font-mono mb-4">
+          {formatTime(timeLeft)}
+        </div>
+
+        <button
+          onClick={handleStop}
+          className="w-full bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+        >
+          Stop
+        </button>
       </div>
-
-      <button
-        onClick={() => {
-          localStorage.removeItem("activeTask");
-          localStorage.removeItem("timerStartAt");
-          setVisible(false);
-        }}
-        className="w-full bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded"
-      >
-        Stop
-      </button>
-    </div>
+    </Draggable>
   );
 }
