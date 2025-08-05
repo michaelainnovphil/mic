@@ -87,21 +87,23 @@ export default function TaskTimerWidget({ activeTask }) {
     );
   }, [task, taskType]);
 
-  // Countdown timer
+  // Continuous countdown timer based on start time
   useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(intervalRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const totalDuration = 9 * 60 * 60; // 9 hours in seconds
+
+    const updateTimeLeft = () => {
+      const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
+      const remaining = Math.max(totalDuration - elapsed, 0);
+      setTimeLeft(remaining);
+    };
+
+    updateTimeLeft(); // initial call
+
+    intervalRef.current = setInterval(updateTimeLeft, 1000);
 
     return () => clearInterval(intervalRef.current);
   }, []);
+
 
   // Export at 5:30 PM
   useEffect(() => {
