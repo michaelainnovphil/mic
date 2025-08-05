@@ -10,26 +10,30 @@ export default function UserList() {
   const [groupedUsers, setGroupedUsers] = useState({});
 
   useEffect(() => {
-    fetch("/api/users")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.value) {
-          const groups = {};
+  fetch("/api/users")
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.value) {
+        const groups = {};
 
-          data.value.forEach((user) => {
-            const jobTitle = user.jobTitle || "No Job Title";
-            const groupKey = `${jobTitle}`;
+        data.value.forEach((user) => {
+          // ✅ Only include users with assigned licenses
+          if (!user.assignedLicenses || user.assignedLicenses.length === 0) return;
 
-            if (!groups[groupKey]) groups[groupKey] = [];
-            groups[groupKey].push(user);
-          });
+          const jobTitle = user.jobTitle || "No Job Title";
+          const groupKey = `${jobTitle}`;
 
-          setGroupedUsers(groups);
-        } else {
-          console.error("Error fetching users:", data);
-        }
-      });
-  }, []);
+          if (!groups[groupKey]) groups[groupKey] = [];
+          groups[groupKey].push(user);
+        });
+
+        setGroupedUsers(groups);
+      } else {
+        console.error("Error fetching users:", data);
+      }
+    });
+}, []);
+
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -38,7 +42,7 @@ export default function UserList() {
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Our Team</h2>
 
         {Object.keys(groupedUsers).length === 0 ? (
-          <p className="text-gray-600">Loading or no users found...</p>
+          <p className="text-gray-600">Loading...</p>
         ) : (
           Object.entries(groupedUsers).map(([groupKey, users]) => (
             <div key={groupKey} className="mb-10">

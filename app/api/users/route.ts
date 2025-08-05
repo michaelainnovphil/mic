@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]/route";
 
-const GRAPH_API_USERS = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,id";
+const GRAPH_API_USERS = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,id,assignedLicenses";
 const GRAPH_API_MEMBEROF = (userId: string) => `https://graph.microsoft.com/v1.0/users/${userId}/memberOf`;
 
 export async function GET(req: Request) {
@@ -28,30 +28,33 @@ export async function GET(req: Request) {
 
     const users = usersData.value || [];
 
-    const usersWithGroups = await Promise.all(
-      users.map(async (user: any) => {
-        const groupsRes = await fetch(GRAPH_API_MEMBEROF(user.id), {
-          headers: {
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-        });
 
-        const groupsData = await groupsRes.json();
+    const licensedUsers = users.filter((user: any) => user.assignedLicenses && user.assignedLicenses.length > 0);
 
-        let groupNames: string[] = [];
+const usersWithGroups = await Promise.all(
+  licensedUsers.map(async (user: any) => {
+    const groupsRes = await fetch(GRAPH_API_MEMBEROF(user.id), {
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+    });
 
-        if (groupsRes.ok && groupsData.value) {
-          groupNames = groupsData.value
-            .filter((g: any) => g.displayName)
-            .map((g: any) => g.displayName);
-        }
+    const groupsData = await groupsRes.json();
 
-        return {
-          ...user,
-          groups: groupNames,
-        };
-      })
-    );
+    let groupNames: string[] = [];
+
+    if (groupsRes.ok && groupsData.value) {
+      groupNames = groupsData.value
+        .filter((g: any) => g.displayName)
+        .map((g: any) => g.displayName);
+    }
+
+    return {
+      ...user,
+      groups: groupNames,
+    };
+  })
+);
 
     return NextResponse.json({ value: usersWithGroups });
   } catch (error) {
