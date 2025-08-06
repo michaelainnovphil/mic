@@ -12,7 +12,7 @@ export default function TaskTimerWidget({ activeTask }) {
   const intervalRef = useRef(null);
   const prevTaskRef = useRef(null);
   const logsRef = useRef([]);
-  const timerStartAtRef = useRef(Date.now());
+  const timerStartAtRef = useRef(null);
   const nodeRef = useRef(null);
 
   const formatTime = (seconds) => {
@@ -22,7 +22,7 @@ export default function TaskTimerWidget({ activeTask }) {
     return `${hrs}:${mins}:${secs}`;
   };
 
-  // Start/resume timer
+  // On widget load
   useEffect(() => {
     const stored = localStorage.getItem("taskTimerState");
     if (stored) {
@@ -38,44 +38,84 @@ export default function TaskTimerWidget({ activeTask }) {
     }
   }, []);
 
-  // When active task changes
+  // Countdown (based on start time)
   useEffect(() => {
-    if (!activeTask) return;
+    const totalDuration = 9 * 60 * 60;
+
+    const updateTimeLeft = () => {
+      if (!timerStartAtRef.current) return;
+      const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
+      const remaining = Math.max(totalDuration - elapsed, 0);
+      setTimeLeft(remaining);
+    };
+
+    intervalRef.current = setInterval(updateTimeLeft, 1000);
+    return () => clearInterval(intervalRef.current);
+  }, []);
+
+  // Auto-export at 5:30 PM
+  useEffect(() => {
+    const now = new Date();
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 30, 0);
+    const msUntilEnd = endOfDay - now;
+
+    if (msUntilEnd > 0) {
+      const timeout = setTimeout(exportLogsToExcel, msUntilEnd);
+      return () => clearTimeout(timeout);
+    }
+  }, []);
+
+  // Handle task switch (or initial task)
+  useEffect(() => {
+    if (!activeTask || !activeTask.task) return;
 
     const stored = localStorage.getItem("taskTimerState");
     const { task: storedTask } = stored ? JSON.parse(stored) : {};
 
     if (storedTask?.title === activeTask.task?.title) {
-      // Same task, ignore
+      // same task
       return;
     }
 
-    // Log previous task duration
-    const prev = prevTaskRef.current;
-    if (prev) {
+    if (prevTaskRef.current) {
       const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - prev.startTime) / 1000);
+      const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
       logsRef.current.push({
-        task: prev.title,
-        taskType: prev.type,
+        task: prevTaskRef.current.title,
+        taskType: prevTaskRef.current.type || "",
         duration: formatTime(durationSeconds),
       });
     }
 
-    // Set new task but don't reset timer
+    // Set new task, don't reset timer
     setTask(activeTask.task);
     setTaskType(activeTask.taskType || "");
+    setVisible(true);
+
     prevTaskRef.current = {
       title: activeTask.task?.title,
       type: activeTask.taskType || "",
       startTime: new Date(),
     };
-    setVisible(true);
+
+    // If not started yet, start now
+    if (!timerStartAtRef.current) {
+      const now = Date.now();
+      timerStartAtRef.current = now;
+      localStorage.setItem(
+        "taskTimerState",
+        JSON.stringify({
+          task: activeTask.task,
+          taskType: activeTask.taskType || "",
+          timerStartAt: now,
+        })
+      );
+    }
   }, [activeTask]);
 
-  // Store current task & time
+  // Save to localStorage on task/type change
   useEffect(() => {
-    if (!task) return;
+    if (!task || !timerStartAtRef.current) return;
 
     localStorage.setItem(
       "taskTimerState",
@@ -87,42 +127,11 @@ export default function TaskTimerWidget({ activeTask }) {
     );
   }, [task, taskType]);
 
-  // Continuous countdown timer based on start time
   useEffect(() => {
-    const totalDuration = 9 * 60 * 60; // 9 hours in seconds
-
-    const updateTimeLeft = () => {
-      const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
-      const remaining = Math.max(totalDuration - elapsed, 0);
-      setTimeLeft(remaining);
-    };
-
-    updateTimeLeft(); // initial call
-
-    intervalRef.current = setInterval(updateTimeLeft, 1000);
-
-    return () => clearInterval(intervalRef.current);
-  }, []);
-
-
-  // Export at 5:30 PM
-  useEffect(() => {
-    const now = new Date();
-    const endOfDay = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-      17,
-      30,
-      0
-    );
-    const msUntilEnd = endOfDay - now;
-
-    if (msUntilEnd > 0) {
-      const timeout = setTimeout(exportLogsToExcel, msUntilEnd);
-      return () => clearTimeout(timeout);
+    if (prevTaskRef.current) {
+      prevTaskRef.current.type = taskType;
     }
-  }, []);
+  }, [taskType]);
 
   const exportLogsToExcel = () => {
     const wsData = [["Task", "Type", "Duration"]];
@@ -139,7 +148,19 @@ export default function TaskTimerWidget({ activeTask }) {
   const handleStop = () => {
     setVisible(false);
     clearInterval(intervalRef.current);
+
+    if (prevTaskRef.current) {
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
+      logsRef.current.push({
+        task: prevTaskRef.current.title,
+        taskType: prevTaskRef.current.type || "",
+        duration: formatTime(durationSeconds),
+      });
+    }
+
     localStorage.removeItem("taskTimerState");
+    timerStartAtRef.current = null;
   };
 
   if (!visible || !task) return null;
