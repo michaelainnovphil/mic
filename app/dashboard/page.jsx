@@ -40,7 +40,7 @@ export default function UserList() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="max-w-6xl mx-auto p-6">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Our Team</h2>
@@ -68,27 +68,32 @@ export default function UserList() {
           </div>
         )}
 
-        {/* ✅ Grouped users excluding Chiefs */}
+        {/* ✅ Grouped users excluding Chiefs - now in two columns with cleaner layout */}
         {Object.keys(groupedUsers).length === 0 ? (
           <p className="text-gray-600">Loading...</p>
         ) : (
           Object.entries(groupedUsers)
             .sort(([a], [b]) => a.localeCompare(b)) // A-Z job titles
             .map(([groupKey, users]) => (
-              <div key={groupKey} className="mb-10">
-                <h3 className="text-xl font-semibold text-blue-900 mb-3">{groupKey}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {users.map((user) => (
-                    <div
-                      key={user.id}
-                      className="bg-white rounded-2xl shadow p-4 hover:shadow-md transition"
-                    >
-                      <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                        {user.displayName}
-                      </h4>
-                      <p className="text-gray-600 text-sm">
-                        {user.mail || user.userPrincipalName}
-                      </p>
+              <div key={groupKey} className="mb-12">
+                <h3 className="text-xl font-semibold text-blue-900 mb-4">{groupKey}</h3>
+                <div className="space-y-6">
+                  {Array.from({ length: Math.ceil(users.length / 2) }).map((_, i) => (
+                    <div key={i} className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {users.slice(i * 2, i * 2 + 2).map((user) => (
+                        <div
+                          key={user.id}
+                          className="bg-white rounded-2xl shadow p-6 hover:shadow-md transition"
+                        >
+                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                            {user.displayName}
+                          </h4>
+                          <p className="text-gray-600 text-sm">
+                            {user.mail || user.userPrincipalName}
+                          </p>
+                          <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
