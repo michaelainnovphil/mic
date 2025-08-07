@@ -194,6 +194,7 @@ export default function TasksPage() {
   const exportLogsToExcel = () => {
     const data = taskLogsRef.current.map((log) => ({
       Task: log.title,
+      Description: log.description,
       Type: log.type,
       "Time Spent (min)": (log.secondsSpent / 60).toFixed(2),
       "Started At": log.startedAt,
