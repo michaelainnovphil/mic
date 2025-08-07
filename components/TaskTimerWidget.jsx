@@ -21,6 +21,8 @@ export default function TaskTimerWidget({ activeTask }) {
     const secs = String(seconds % 60).padStart(2, "0");
     return `${hrs}:${mins}:${secs}`;
   };
+  
+  
 
   // On widget load
   useEffect(() => {

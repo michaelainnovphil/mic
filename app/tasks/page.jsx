@@ -23,6 +23,14 @@ const formatTime = (seconds) => {
     .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
+const updateTaskStatus = async (taskId, status) => {
+  await fetch(`/api/task/${taskId}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+};
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [title, setTitle] = useState("");
@@ -85,15 +93,17 @@ export default function TasksPage() {
   }, []);
 
   const fetchTasks = async () => {
-    const res = await fetch("/api/task");
-    const data = await res.json();
-    setTasks(data.tasks || []);
-  };
+  const res = await fetch("/api/tasks");
+  const data = await res.json();
+  console.log("Fetched tasks:", data); // ✅ Debug log
+  setTasks(Array.isArray(data) ? data : []);
+};
+
 
   const handleAddTask = async () => {
     if (!title) return alert("Title is required");
 
-    const res = await fetch("/api/task", {
+    const res = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title, description }),
@@ -118,6 +128,8 @@ export default function TasksPage() {
   const startTask = (task) => {
   const now = Date.now();
   const prev = previousTaskRef.current;
+  updateTaskStatus(task._id, "pending");
+
 
   if (prev && prev.task && prev.startedAt) {
     const secondsSpent = Math.floor((now - prev.startedAt) / 1000);
@@ -149,11 +161,16 @@ export default function TasksPage() {
 
 
   const stopTask = () => {
-    setActiveTask(null);
-    setTaskType("");
-    localStorage.removeItem("activeTask");
-    // Timer remains running — not cleared here!
-  };
+  const stored = JSON.parse(localStorage.getItem("activeTask"));
+  if (stored?.task?._id) {
+    updateTaskStatus(stored.task._id, "completed");
+  }
+
+  setActiveTask(null);
+  setTaskType("");
+  localStorage.removeItem("activeTask");
+};
+
 
   // ✅ Manual export button support
   const exportLogsToExcel = () => {
@@ -211,7 +228,9 @@ export default function TasksPage() {
                 className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow flex justify-between items-center"
               >
                 <div>
-                  <h3 className="text-lg font-bold">{task.title}</h3>
+                  <h3 className="text-lg font-bold">{task.title}</h3> 
+                  <p>Status: {task.status}</p>
+
                   {task.description && (
                     <p className="text-sm text-gray-600 dark:text-gray-300">
                       {task.description}
