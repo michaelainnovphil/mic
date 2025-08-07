@@ -4,12 +4,14 @@ import connectToDatabase from "@/lib/mongodb";
 import Task from "@/lib/models/Task";
 
 export async function PUT(req, context) {
-  const { params } = context; // ✅ FIXED: Extract params here
-  await connectToDatabase();
+  const { params } = context; // Access params INSIDE the function
+  const { id } = params;      // Destructure id here
   const { status } = await req.json();
 
+  await connectToDatabase();
+
   try {
-    const task = await Task.findByIdAndUpdate(params.id, { status }, { new: true });
+    const task = await Task.findByIdAndUpdate(id, { status }, { new: true });
     if (!task) return new Response("Task not found", { status: 404 });
 
     return Response.json(task);

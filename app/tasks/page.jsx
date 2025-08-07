@@ -24,7 +24,7 @@ const formatTime = (seconds) => {
 };
 
 const updateTaskStatus = async (taskId, status) => {
-  await fetch(`/api/task/${taskId}/status`, {
+  await fetch(`/api/tasks/${taskId}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -41,11 +41,26 @@ export default function TasksPage() {
   const previousTaskRef = useRef(null);
   const taskLogsRef = useRef([]);
   const widgetRef = useRef(null);
+  const [assignedTo, setAssignedTo] = useState("");
+  const [users, setUsers] = useState([]);
+  const [priority, setPriority] = useState("Medium");
+
 
   // Fetch all tasks
   useEffect(() => {
     fetchTasks();
   }, []);
+
+  useEffect(() => {
+    fetchUsers(); // ✅ Fetch users for dropdown
+  }, []);
+
+  const fetchUsers = async () => {
+    const res = await fetch("/api/users");
+    const data = await res.json();
+    setUsers(Array.isArray(data.value) ? data.value : []);
+
+  };
 
   // Timer countdown
   useEffect(() => {
@@ -93,12 +108,11 @@ export default function TasksPage() {
   }, []);
 
   const fetchTasks = async () => {
-  const res = await fetch("/api/tasks");
-  const data = await res.json();
-  console.log("Fetched tasks:", data); // ✅ Debug log
-  setTasks(Array.isArray(data) ? data : []);
-};
-
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
+    console.log("Fetched tasks:", data); // ✅ Debug log
+    setTasks(Array.isArray(data) ? data : []);
+  };
 
   const handleAddTask = async () => {
     if (!title) return alert("Title is required");
@@ -106,12 +120,14 @@ export default function TasksPage() {
     const res = await fetch("/api/tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description }),
+      body: JSON.stringify({ title, description, assignedTo, priority }), // ✅ includes priority
     });
+    setAssignedTo("");
 
     if (res.ok) {
       setTitle("");
       setDescription("");
+      setPriority("Medium"); // ✅ reset to default
       fetchTasks();
     } else {
       const data = await res.json();
@@ -119,17 +135,20 @@ export default function TasksPage() {
     }
   };
 
+
   const handleStart = (task) => {
-  localStorage.setItem("currentTask", JSON.stringify(task));
-  window.dispatchEvent(new Event("storage")); // manually trigger storage event
-};
+    localStorage.setItem("currentTask", JSON.stringify(task));
+    window.dispatchEvent(new Event("storage")); // manually trigger storage event
+  };
 
-
-  const startTask = (task) => {
+  const startTask = async (task) => {
   const now = Date.now();
   const prev = previousTaskRef.current;
-  updateTaskStatus(task._id, "pending");
 
+  // ✅ Change status to "in-progress" if it's pending
+  if (task.status === "pending") {
+    await updateTaskStatus(task._id, "in-progress");
+  }
 
   if (prev && prev.task && prev.startedAt) {
     const secondsSpent = Math.floor((now - prev.startedAt) / 1000);
@@ -150,7 +169,7 @@ export default function TasksPage() {
   const taskPayload = { task, taskType: current.taskType || "" };
 
   localStorage.setItem("activeTask", JSON.stringify(taskPayload));
-  setActiveTask(taskPayload); // ✅ This ensures TaskTimerWidget receives the correct shape
+  setActiveTask(taskPayload);
 
   previousTaskRef.current = {
     task,
@@ -161,16 +180,15 @@ export default function TasksPage() {
 
 
   const stopTask = () => {
-  const stored = JSON.parse(localStorage.getItem("activeTask"));
-  if (stored?.task?._id) {
-    updateTaskStatus(stored.task._id, "completed");
-  }
+    const stored = JSON.parse(localStorage.getItem("activeTask"));
+    if (stored?.task?._id) {
+      updateTaskStatus(stored.task._id, "completed");
+    }
 
-  setActiveTask(null);
-  setTaskType("");
-  localStorage.removeItem("activeTask");
-};
-
+    setActiveTask(null);
+    setTaskType("");
+    localStorage.removeItem("activeTask");
+  };
 
   // ✅ Manual export button support
   const exportLogsToExcel = () => {
@@ -210,6 +228,32 @@ export default function TasksPage() {
             onChange={(e) => setDescription(e.target.value)}
             className="w-full mb-3 p-2 rounded border dark:bg-gray-700 dark:text-white"
           />
+          <label className="block mb-1">Priority</label>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              className="w-full border rounded p-2 mb-4"
+            >
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+
+          <select
+            name="assignedTo"
+            value={assignedTo}
+            onChange={(e) => setAssignedTo(e.target.value)}
+            className="w-full mb-3 p-2 rounded border dark:bg-gray-700 dark:text-white"
+          >
+            <option value="">Assign to (user)</option>
+            {users.map((user) => (
+              <option key={user.id || user._id} value={user.mail || user.email}>
+                {user.displayName || user.mail || user.email}
+              </option>
+            ))}
+          </select>
+            
+
           <button
             onClick={handleAddTask}
             className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded"
@@ -224,20 +268,28 @@ export default function TasksPage() {
           ) : (
             tasks.map((task, idx) => (
               <div
-                key={idx}
-                className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow flex justify-between items-center"
-              >
-                <div>
-                  <h3 className="text-lg font-bold">{task.title}</h3> 
-                  <p>Status: {task.status}</p>
+              key={idx}
+              className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow flex justify-between items-center"
+            >
+              <div>
+                <h3 className="text-lg font-bold">{task.title}</h3>
+                <p>Status: {task.status}</p>
+                {task.description && (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {task.description}
+                  </p>
+                )}
+                {task.assignedTo && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    Assigned to: <strong>{task.assignedTo}</strong>
+                  </p>
+                )}
+              </div>
 
-                  {task.description && (
-                    <p className="text-sm text-gray-600 dark:text-gray-300">
-                      {task.description}
-                    </p>
-                  )}
-                </div>
-
+              <div className="flex items-center gap-2">
+                {task.priority === "High" && (
+                  <span className="text-red-600 text-xl font-bold">❗</span>
+                )}
                 <button
                   onClick={() => startTask(task)}
                   className="bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded"
@@ -245,6 +297,9 @@ export default function TasksPage() {
                   Start
                 </button>
               </div>
+            </div>
+
+
             ))
           )}
         </div>
