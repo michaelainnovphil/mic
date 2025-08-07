@@ -84,6 +84,7 @@ export default function TaskTimerWidget({ activeTask }) {
       const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
       logsRef.current.push({
         task: prevTaskRef.current.title,
+        description: prevTaskRef.current.description,
         taskType: prevTaskRef.current.type || "",
         duration: formatTime(durationSeconds),
       });
@@ -97,8 +98,10 @@ export default function TaskTimerWidget({ activeTask }) {
     prevTaskRef.current = {
       title: activeTask.task?.title,
       type: activeTask.taskType || "",
+      description: activeTask.task?.description || "",
       startTime: new Date(),
     };
+
 
     // If not started yet, start now
     if (!timerStartAtRef.current) {
@@ -136,9 +139,9 @@ export default function TaskTimerWidget({ activeTask }) {
   }, [taskType]);
 
   const exportLogsToExcel = () => {
-    const wsData = [["Task", "Type", "Duration"]];
+    const wsData = [["Task", "Description", "Type", "Duration"]];
     logsRef.current.forEach((log) => {
-      wsData.push([log.task, log.taskType, log.duration]);
+      wsData.push([log.task, log.description, log.taskType, log.duration]);
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet(wsData);
@@ -155,9 +158,10 @@ export default function TaskTimerWidget({ activeTask }) {
       const endTime = new Date();
       const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
       logsRef.current.push({
-        task: prevTaskRef.current.title,
-        taskType: prevTaskRef.current.type || "",
-        duration: formatTime(durationSeconds),
+      task: prevTaskRef.current.title,
+      taskType: prevTaskRef.current.type || "",
+      description: prevTaskRef.current.description || "",
+      duration: formatTime(durationSeconds),
       });
     }
 

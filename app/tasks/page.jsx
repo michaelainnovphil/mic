@@ -192,21 +192,22 @@ export default function TasksPage() {
 
   // ✅ Manual export button support
   const exportLogsToExcel = () => {
-    const data = taskLogsRef.current.map((log) => ({
-      Task: log.title,
-      Description: log.description,
-      Type: log.type,
-      "Time Spent (min)": (log.secondsSpent / 60).toFixed(2),
-      "Started At": log.startedAt,
-      "Ended At": log.endedAt,
-    }));
+  const data = taskLogsRef.current.map((log) => ({
+    Task: log.title,
+    Description: log.description, // ✅ Add description
+    Type: log.type,
+    "Time Spent (min)": (log.secondsSpent / 60).toFixed(2),
+    "Started At": log.startedAt,
+    "Ended At": log.endedAt,
+  }));
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Task Logs");
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
 
-    XLSX.writeFile(wb, `task_logs_${new Date().toLocaleDateString()}.xlsx`);
-  };
+  XLSX.writeFile(workbook, "task_logs.xlsx");
+};
+
 
   return (
     <div className="min-h-screen bg-gray-50">
