@@ -292,12 +292,41 @@ export default function TasksPage() {
                 {task.priority === "High" && (
                   <span className="text-red-600 text-xl font-bold">❗</span>
                 )}
-                <button
-                  onClick={() => startTask(task)}
-                  className="bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded"
-                >
-                  Start
-                </button>
+                {task.status === "in-progress" ? (
+  <>
+    <button
+      onClick={() => {
+        updateTaskStatus(task._id, "completed");
+        fetchTasks();
+        setActiveTask(null);
+        localStorage.removeItem("activeTask");
+      }}
+      className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1 rounded"
+    >
+      Complete
+    </button>
+    <button
+      onClick={() => {
+        // Placeholder for "Abandon" logic – define as needed
+        updateTaskStatus(task._id, "pending");
+        fetchTasks();
+        setActiveTask(null);
+        localStorage.removeItem("activeTask");
+      }}
+      className="bg-red-600 hover:bg-red-500 text-white px-4 py-1 rounded"
+      >
+        Abandon
+      </button>
+        </>
+      ) : (
+        <button
+          onClick={() => startTask(task)}
+          className="bg-green-600 hover:bg-green-500 text-white px-4 py-1 rounded"
+        >
+          Start
+        </button>
+      )}
+
               </div>
             </div>
 
