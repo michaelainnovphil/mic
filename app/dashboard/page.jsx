@@ -9,35 +9,48 @@ export default function UserList() {
   const [groupedUsers, setGroupedUsers] = useState({});
 
   useEffect(() => {
-    fetch("/api/users")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.value) {
-          const chiefsList = [];
-          const groups = {};
+    async function fetchData() {
+      const usersRes = await fetch("/api/users");
+      const statsRes = await fetch("/api/user-task-stats");
 
-          data.value.forEach((user) => {
-            // ✅ Skip users without job title or without assigned licenses
-            if (!user.jobTitle || !user.assignedLicenses || user.assignedLicenses.length === 0) return;
+      const usersData = await usersRes.json();
+      const statsData = await statsRes.json();
 
-            const jobTitle = user.jobTitle;
-            const isChief = jobTitle.toLowerCase().includes("chief");
+      if (usersData.value) {
+        const chiefsList = [];
+        const groups = {};
+        const taskStats = statsData.stats || {};
 
-            if (isChief) {
-              chiefsList.push(user);
-            } else {
-              if (!groups[jobTitle]) groups[jobTitle] = [];
-              groups[jobTitle].push(user);
-            }
-          });
+        usersData.value.forEach((user) => {
+          if (!user.jobTitle || !user.assignedLicenses || user.assignedLicenses.length === 0)
+            return;
 
-          setChiefs(chiefsList);
-          setGroupedUsers(groups);
-        } else {
-          console.error("Error fetching users:", data);
-        }
-      });
+          const jobTitle = user.jobTitle;
+          const isChief = jobTitle.toLowerCase().includes("chief");
+
+          const userEmail = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
+          const userStats = taskStats[userEmail] || { completed: 0, pending: 0 };
+          user.taskStats = userStats;
+
+
+          if (isChief) {
+            chiefsList.push(user);
+          } else {
+            if (!groups[jobTitle]) groups[jobTitle] = [];
+            groups[jobTitle].push(user);
+          }
+        });
+
+        setChiefs(chiefsList);
+        setGroupedUsers(groups);
+      }
+    }
+
+    fetchData();
   }, []);
+
+
+  
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -62,7 +75,9 @@ export default function UserList() {
                     {user.mail || user.userPrincipalName}
                   </p>
                   <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
+
                 </div>
+                
               ))}
             </div>
           </div>
@@ -92,6 +107,10 @@ export default function UserList() {
                             {user.mail || user.userPrincipalName}
                           </p>
                           <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
+                          <p className="text-xs text-green-600 mt-2">
+  ✅ Completed: {user.taskStats?.completed ?? 0} | ⏳ Pending: {user.taskStats?.pending ?? 0}
+</p>
+
                         </div>
                       ))}
                     </div>
