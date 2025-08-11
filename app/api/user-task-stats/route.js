@@ -7,13 +7,20 @@ export async function GET(req) {
   try {
     await connectToDatabase();
 
-    const allTasks = await Task.find({}, "assignedTo status");
+    const allTasks = await Task.find({}, "assignedTo status duration");
 
     const stats = {};
 
     for (const task of allTasks) {
       const email = task.assignedTo;
       const status = task.status?.toLowerCase().trim(); 
+
+      const taskDurations = {};
+        for (const task of allTasks) {
+        const email = task.assignedTo;
+        if (!taskDurations[email]) taskDurations[email] = 0;
+        taskDurations[email] += task.duration || 0;
+        }
 
       if (!email) continue; 
 
