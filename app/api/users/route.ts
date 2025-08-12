@@ -75,7 +75,7 @@ export async function GET(req: Request) {
       })
     );
 
-    return NextResponse.json({ email: session.user.email, value: usersWithGroups });
+    return NextResponse.json({ value: usersWithGroups });
   } catch (error) {
     console.error("Unexpected error:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

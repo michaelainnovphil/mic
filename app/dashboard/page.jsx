@@ -103,7 +103,7 @@ export default function UserList() {
                     src={user.photo} 
                     alt={user.displayName}
                     style={{ width: 48, height: 48, borderRadius: "50%" }}
-                            />
+                  />
                   <h4 className="text-lg font-semibold text-gray-900 mb-1">
                     {user.displayName}
                   </h4>
