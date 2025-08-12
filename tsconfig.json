@@ -23,6 +23,6 @@
       "@/*": ["./*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "app/api/auth/[...nextauth]/route.js", "app/api/auth/[...nextauth]/route.js", "components/Providers.jsx", "components/TaskTimerWidget.jsx", "components/TaskTimerWrapper.jsx"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "app/api/auth/[...nextauth]/route.js", "app/api/auth/[...nextauth]/route.js", "components/Providers.jsx", "components/TaskTimerWidget.jsx", "components/TaskTimerWrapper.jsx", "app/api/user-photo/[email]/route.js"],
   "exclude": ["node_modules"]
 }

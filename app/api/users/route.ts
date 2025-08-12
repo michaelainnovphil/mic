@@ -1,13 +1,10 @@
-// /app/api/users/route.js
-
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 
-
-
 const GRAPH_API_USERS = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,jobTitle,id,assignedLicenses";
 const GRAPH_API_MEMBEROF = (userId: string) => `https://graph.microsoft.com/v1.0/users/${userId}/memberOf`;
+const GRAPH_API_PHOTO = (userId: string) => `https://graph.microsoft.com/v1.0/users/${userId}/photo/$value`;
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -32,33 +29,51 @@ export async function GET(req: Request) {
 
     const users = usersData.value || [];
 
-
     const licensedUsers = users.filter((user: any) => user.assignedLicenses && user.assignedLicenses.length > 0);
 
-const usersWithGroups = await Promise.all(
-  licensedUsers.map(async (user: any) => {
-    const groupsRes = await fetch(GRAPH_API_MEMBEROF(user.id), {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-      },
-    });
+    const usersWithGroups = await Promise.all(
+      licensedUsers.map(async (user: any) => {
+        const groupsRes = await fetch(GRAPH_API_MEMBEROF(user.id), {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        });
 
-    const groupsData = await groupsRes.json();
+        const groupsData = await groupsRes.json();
 
-    let groupNames: string[] = [];
+        let groupNames: string[] = [];
 
-    if (groupsRes.ok && groupsData.value) {
-      groupNames = groupsData.value
-        .filter((g: any) => g.displayName)
-        .map((g: any) => g.displayName);
-    }
+        if (groupsRes.ok && groupsData.value) {
+          groupNames = groupsData.value
+            .filter((g: any) => g.displayName)
+            .map((g: any) => g.displayName);
+        }
 
-    return {
-      ...user,
-      groups: groupNames,
-    };
-  })
-);
+        // Add photo fetching
+        let photo: string | null = null;
+        try {
+          const photoRes = await fetch(GRAPH_API_PHOTO(user.id), {
+            headers: {
+              Authorization: `Bearer ${session.accessToken}`,
+            },
+          });
+
+          if (photoRes.ok) {
+            const buffer = await photoRes.arrayBuffer();
+            const base64 = Buffer.from(buffer).toString("base64");
+            photo = `data:image/jpeg;base64,${base64}`;
+          }
+        } catch {
+          photo = null;
+        }
+
+        return {
+          ...user,
+          groups: groupNames,
+          photo,
+        };
+      })
+    );
 
     return NextResponse.json({ value: usersWithGroups });
   } catch (error) {

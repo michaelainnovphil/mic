@@ -99,6 +99,11 @@ export default function UserList() {
                   onClick={() => setSelectedUser(user)}
                   className="bg-white rounded-2xl shadow p-4 w-64 hover:shadow-md transition cursor-pointer"
                 >
+                  <img
+                    src={user.photo} 
+                    alt={user.displayName}
+                    style={{ width: 48, height: 48, borderRadius: "50%" }}
+                  />
                   <h4 className="text-lg font-semibold text-gray-900 mb-1">
                     {user.displayName}
                   </h4>
@@ -130,6 +135,14 @@ export default function UserList() {
                           className="bg-white rounded-2xl shadow p-6 hover:shadow-md transition flex justify-between items-start gap-4 cursor-pointer"
                         >
                           <div>
+                            <img
+                              src={user.photo} 
+                              alt={user.displayName}
+                              style={{ width: 48, height: 48, borderRadius: "50%" }}
+                            />
+
+
+
                             <h4 className="text-lg font-semibold text-gray-900 mb-1">
                               {user.displayName}
                             </h4>
