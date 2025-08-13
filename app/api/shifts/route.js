@@ -1,10 +1,6 @@
 // app/api/shifts/route.js
 import { NextResponse } from "next/server";
 
-/**
- * Helper to read start/end ISO strings from a Graph shift object.
- * Handles sharedShift, draftShift, and nested start.dateTime shapes.
- */
 function extractStartEnd(shift) {
   const candidate = shift.sharedShift ?? shift.draftShift ?? shift;
 
