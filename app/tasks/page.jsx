@@ -5,23 +5,6 @@ import Header from "@/components/Header";
 import TaskTimerWidget from "@/components/TaskTimerWidget";
 import * as XLSX from "xlsx";
 
-const TASK_TYPES = [
-  "Team Huddle",
-  "Adhoc",
-  "Coffee Break",
-  "Lunch Break",
-  "Meeting",
-  "Productivity Hours",
-];
-
-const formatTime = (seconds) => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${hrs.toString().padStart(2, "0")}:${mins
-    .toString()
-    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
 
 const updateTaskStatus = async (taskId, status) => {
   await fetch(`/api/tasks/${taskId}/status`, {

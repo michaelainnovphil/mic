@@ -1,3 +1,5 @@
+// components/TaskTimerWidget.jsx
+
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -15,14 +17,15 @@ export default function TaskTimerWidget({ activeTask }) {
   const timerStartAtRef = useRef(null);
   const nodeRef = useRef(null);
 
-  const formatTime = (seconds) => {
-    const hrs = String(Math.floor(seconds / 3600)).padStart(2, "0");
-    const mins = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
-    const secs = String(seconds % 60).padStart(2, "0");
-    return `${hrs}:${mins}:${secs}`;
-  };
   
-  
+const formatTime = (seconds) => {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${hrs.toString().padStart(2, "0")}:${mins
+    .toString()
+    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+};
 
   // On widget load
   useEffect(() => {
@@ -40,10 +43,9 @@ export default function TaskTimerWidget({ activeTask }) {
     }
   }, []);
 
-  // Countdown (based on start time)
+  // Countdown
   useEffect(() => {
     const totalDuration = 9 * 60 * 60;
-
     const updateTimeLeft = () => {
       if (!timerStartAtRef.current) return;
       const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
@@ -82,12 +84,25 @@ export default function TaskTimerWidget({ activeTask }) {
     if (prevTaskRef.current) {
       const endTime = new Date();
       const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
+
       logsRef.current.push({
         task: prevTaskRef.current.title,
         description: prevTaskRef.current.description,
         taskType: prevTaskRef.current.type || "",
         duration: formatTime(durationSeconds),
+        durationSeconds,
       });
+
+      // ✅ Send hours to MongoDB
+      fetch("/api/update-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: prevTaskRef.current.id,
+          durationSeconds,
+          durationHours: durationSeconds / 3600,
+        }),
+      }).catch(console.error);
     }
 
     // Set new task, don't reset timer
@@ -96,14 +111,13 @@ export default function TaskTimerWidget({ activeTask }) {
     setVisible(true);
 
     prevTaskRef.current = {
+      id: activeTask.task?._id, // ✅ store ID for updates
       title: activeTask.task?.title,
       type: activeTask.taskType || "",
       description: activeTask.task?.description || "",
       startTime: new Date(),
     };
 
-
-    // If not started yet, start now
     if (!timerStartAtRef.current) {
       const now = Date.now();
       timerStartAtRef.current = now;
@@ -118,10 +132,9 @@ export default function TaskTimerWidget({ activeTask }) {
     }
   }, [activeTask]);
 
-  // Save to localStorage on task/type change
+  // Save to localStorage
   useEffect(() => {
     if (!task || !timerStartAtRef.current) return;
-
     localStorage.setItem(
       "taskTimerState",
       JSON.stringify({
@@ -157,12 +170,24 @@ export default function TaskTimerWidget({ activeTask }) {
     if (prevTaskRef.current) {
       const endTime = new Date();
       const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
+
       logsRef.current.push({
-      task: prevTaskRef.current.title,
-      taskType: prevTaskRef.current.type || "",
-      description: prevTaskRef.current.description || "",
-      duration: formatTime(durationSeconds),
+        task: prevTaskRef.current.title,
+        taskType: prevTaskRef.current.type || "",
+        description: prevTaskRef.current.description || "",
+        duration: formatTime(durationSeconds),
       });
+
+      // ✅ Final MongoDB update
+      fetch("/api/update-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: prevTaskRef.current.id,
+          durationSeconds,
+          durationHours: durationSeconds / 3600,
+        }),
+      }).catch(console.error);
     }
 
     localStorage.removeItem("taskTimerState");

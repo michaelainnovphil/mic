@@ -1,161 +1,134 @@
 // app/api/shifts/route.js
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
 
+// Safely pick start/end from any shift shape
 function extractStartEnd(shift) {
-  const candidate = shift.sharedShift ?? shift.draftShift ?? shift;
-
-
+  const c = shift.sharedShift ?? shift.draftShift ?? shift;
   const start =
-    candidate?.startDateTime ??
-    candidate?.start?.dateTime ??
-    candidate?.start ??
+    c?.startDateTime ??
+    c?.start?.dateTime ??
+    c?.start ??
     null;
   const end =
-    candidate?.endDateTime ??
-    candidate?.end?.dateTime ??
-    candidate?.end ??
+    c?.endDateTime ??
+    c?.end?.dateTime ??
+    c?.end ??
     null;
-
   return { start, end };
 }
 
-async function getAccessToken(tenantId, clientId, clientSecret) {
-  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-  const body = new URLSearchParams({
-    client_id: clientId,
-    scope: "https://graph.microsoft.com/.default",
-    client_secret: clientSecret,
-    grant_type: "client_credentials",
-  });
+// Fetch every page from Graph (@odata.nextLink)
+async function fetchAllShifts(teamId, accessToken) {
+  const all = [];
+  let url = `https://graph.microsoft.com/v1.0/teams/${teamId}/schedule/shifts?$top=200`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(20000),
+    });
 
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Token fetch failed ${res.status} ${t}`);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Graph shifts fetch failed ${res.status}: ${text}`);
+    }
+
+    const json = await res.json();
+    const items = Array.isArray(json.value) ? json.value : [];
+    all.push(...items);
+    url = json["@odata.nextLink"] || null;
   }
 
-  const json = await res.json();
-  return json.access_token;
+  return all;
+}
+
+// Resolve Graph user objectId -> email
+async function resolveEmails(hoursById, accessToken) {
+  const hoursByEmail = {};
+
+  for (const [graphUserId, hrs] of Object.entries(hoursById)) {
+    try {
+      const res = await fetch(
+        `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(graphUserId)}?$select=mail,userPrincipalName`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.warn(`User lookup failed for ${graphUserId}: ${res.status} ${txt}`);
+        const key = graphUserId.toLowerCase().trim();
+        hoursByEmail[key] = (hoursByEmail[key] || 0) + Number(hrs || 0);
+        continue;
+      }
+
+      const u = await res.json();
+      const email = (u.mail || u.userPrincipalName || "").toLowerCase().trim();
+      const key = email || graphUserId.toLowerCase().trim();
+      hoursByEmail[key] = (hoursByEmail[key] || 0) + Number(hrs || 0);
+    } catch (e) {
+      console.warn(`Error resolving user ${graphUserId}:`, e?.message || e);
+      const key = graphUserId.toLowerCase().trim();
+      hoursByEmail[key] = (hoursByEmail[key] || 0) + Number(hrs || 0);
+    }
+  }
+
+  return hoursByEmail;
 }
 
 export async function GET() {
-  const tenantId = process.env.AZURE_AD_TENANT_ID;
-  const clientId = process.env.AZURE_AD_CLIENT_ID;
-  const clientSecret = process.env.AZURE_AD_CLIENT_SECRET;
-  const teamId = process.env.MS_TEAM_ID;
-
-  if (!tenantId || !clientId || !clientSecret || !teamId) {
-    console.error("Missing required env vars for /api/shifts");
-    return NextResponse.json(
-      { error: "Server misconfiguration: missing env vars" },
-      { status: 500 }
-    );
-  }
-
   try {
-    const accessToken = await getAccessToken(tenantId, clientId, clientSecret);
-    if (!accessToken) {
-      console.error("No access token obtained");
-      return NextResponse.json({ error: "Auth failed" }, { status: 500 });
+    const session = await getServerSession(authOptions);
+    if (!session?.accessToken) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch shifts for the team
-    const shiftsRes = await fetch(
-      `https://graph.microsoft.com/v1.0/teams/${teamId}/schedule/shifts`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    if (!shiftsRes.ok) {
-      const text = await shiftsRes.text().catch(() => "");
-      console.error("Graph shifts fetch failed:", shiftsRes.status, text);
-      return NextResponse.json(
-        { error: "Failed to fetch shifts from Graph" },
-        { status: 500 }
-      );
+    const teamId = process.env.MS_TEAM_ID;
+    if (!teamId) {
+      return NextResponse.json({ error: "Missing MS_TEAM_ID" }, { status: 500 });
     }
 
-    const shiftsData = await shiftsRes.json();
-    const shifts = Array.isArray(shiftsData.value) ? shiftsData.value : [];
+    // Define current month start and next month start
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    // First pass: accumulate hours per Graph userId
+    // Pull all shifts
+    const shifts = await fetchAllShifts(teamId, session.accessToken);
+
+    // Sum hours per Graph userId for current month only
     const hoursById = {};
-
     for (const shift of shifts) {
       const userId = shift.userId;
       if (!userId) continue;
 
       const { start, end } = extractStartEnd(shift);
-      if (!start || !end) {
-        // skip incomplete shifts
-        continue;
-      }
+      if (!start || !end) continue;
 
-      const s = Date.parse(start);
-      const e = Date.parse(end);
-      if (isNaN(s) || isNaN(e) || e <= s) continue;
+      const s = new Date(start);
+      const e = new Date(end);
 
-      const durationHours = (e - s) / (1000 * 60 * 60);
-      hoursById[userId] = (hoursById[userId] || 0) + durationHours;
-    }
-
-    // Second pass: resolve Graph user id -> email
-    const hoursByEmail = {};
-
-    // Resolve in sequence to avoid complicated parallel throttling.
-    for (const [graphUserId, hrs] of Object.entries(hoursById)) {
-      try {
-        const userRes = await fetch(
-          `https://graph.microsoft.com/v1.0/users/${graphUserId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        );
-
-        if (!userRes.ok) {
-  const txt = await userRes.text().catch(() => "");
-  console.warn(`Failed to fetch user ${graphUserId}:`, userRes.status, txt);
-
-  // Use object ID as fallback email key
-  const fallbackKey = graphUserId.toLowerCase().trim();
-  hoursByEmail[fallbackKey] = (hoursByEmail[fallbackKey] || 0) + Number(hrs || 0);
-  continue;
-}
-
-
-        const userData = await userRes.json();
-        const email = (userData.mail || userData.userPrincipalName || "")
-          .toLowerCase()
-          .trim();
-
-        if (!email) {
-  const fallbackKey = graphUserId.toLowerCase().trim();
-  hoursByEmail[fallbackKey] = (hoursByEmail[fallbackKey] || 0) + Number(hrs || 0);
-  continue;
-}
-
-        hoursByEmail[email] = (hoursByEmail[email] || 0) + Number(hrs || 0);
-      } catch (err) {
-        console.warn("Error resolving user to email for", graphUserId, err?.message || err);
-        continue;
+      // This month only
+      if (s >= monthStart && s < nextMonthStart) {
+        const hours = (e - s) / (1000 * 60 * 60);
+        hoursById[userId] = (hoursById[userId] || 0) + hours;
       }
     }
 
-    console.log("Sending shiftHoursPerUser (count):", Object.keys(hoursByEmail).length);
-    return NextResponse.json({ shiftHoursPerUser: hoursByEmail });
+    //  Map user ids -> emails
+    const shiftHoursPerUser = await resolveEmails(hoursById, session.accessToken);
+
+    console.log(
+      `Shifts OK: ${shifts.length} shifts fetched, ${Object.keys(shiftHoursPerUser).length} users (this month only)`
+    );
+
+    return NextResponse.json({ shiftHoursPerUser });
   } catch (error) {
     console.error("Shifts API error:", error?.message || error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: error?.message || "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
