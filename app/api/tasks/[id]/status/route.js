@@ -4,7 +4,7 @@ import connectToDatabase from "@/lib/mongodb";
 import Task from "@/lib/models/Task";
 
 export async function PUT(req, context) {
-  const { id } = await context.params; // ✅ await params before use
+  const { id } = await context.params; // await params before use
   const { status } = await req.json();
 
   await connectToDatabase();

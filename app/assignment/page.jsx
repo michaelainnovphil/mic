@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SessionProvider, useSession } from "next-auth/react";
 import Header from "@/components/Header";
 import TaskTimerWidget from "@/components/TaskTimerWidget";
 
-export default function AssignmentPage() {
+function AssignmentContent() {
+  const { data: session } = useSession();
+  const currentUserEmail = session?.user?.email || "";
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
@@ -14,49 +18,89 @@ export default function AssignmentPage() {
   const [assignedTo, setAssignedTo] = useState("");
 
   useEffect(() => {
-    fetchTeamMembers();
-    fetchAssignedTasks();
-    fetchTeamTasks();
-  }, []);
+    if (currentUserEmail) {
+      fetchTeamMembers();
+      fetchAssignedTasks();
+      fetchTeamTasks();
+    }
+  }, [currentUserEmail]);
 
   const fetchTeamMembers = async () => {
-    const res = await fetch("/api/users"); // Replace with API to fetch team members
+    const res = await fetch("/api/users");
     const data = await res.json();
     setTeamMembers(Array.isArray(data.value) ? data.value : []);
   };
 
   const fetchAssignedTasks = async () => {
-    const res = await fetch("/api/tasks?assignedByMe=true"); // Tasks added by current user
-    const data = await res.json();
-    setAssignedTasks(data || []);
-  };
+  const res = await fetch("/api/tasks");
+  const data = await res.json();
+
+  // Tasks are "unassigned" if no one is in the array OR it includes "unassigned"
+  const unassigned = (data || []).filter(
+    (task) =>
+      Array.isArray(task.assignedTo) &&
+      (task.assignedTo.length === 0 || task.assignedTo.includes("unassigned"))
+  );
+
+  setAssignedTasks(unassigned);
+};
+
+
+
 
   const fetchTeamTasks = async () => {
-    const res = await fetch("/api/tasks?teamTasks=true"); // Tasks from team members
-    const data = await res.json();
-    setTeamTasks(data || []);
-  };
+  const res = await fetch("/api/tasks");
+  const data = await res.json();
+
+  // Group tasks by user (from assignedTo array)
+  const userStats = {};
+
+  (data || []).forEach((task) => {
+    if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
+      task.assignedTo.forEach((user) => {
+        if (!userStats[user]) {
+          userStats[user] = { total: 0, completed: 0 };
+        }
+        userStats[user].total += 1;
+        if (task.status === "completed") {
+          userStats[user].completed += 1;
+        }
+      });
+    }
+  });
+
+  setTeamTasks(userStats);
+};
+
 
   const handleAddTask = async () => {
-    if (!title) return alert("Title is required");
+  if (!title) return alert("Title is required");
 
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description, priority, assignedTo }),
-    });
+  const assignedValue = assignedTo.trim() === "" ? "unassigned" : assignedTo;
 
-    if (res.ok) {
-      setTitle("");
-      setDescription("");
-      setPriority("Medium");
-      setAssignedTo("");
-      fetchAssignedTasks();
-    } else {
-      const data = await res.json();
-      alert(data.error || "Failed to add task");
-    }
-  };
+  const res = await fetch("/api/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      description,
+      priority,
+      assignedTo: assignedValue,
+      createdBy: currentUserEmail,
+    }),
+  });
+
+  if (res.ok) {
+    setTitle("");
+    setDescription("");
+    setPriority("Medium");
+    setAssignedTo("");
+    await fetchAssignedTasks(); // refresh assigned tasks
+  } else {
+    const data = await res.json();
+    alert(data.error || "Failed to add task");
+  }
+};
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
@@ -122,7 +166,7 @@ export default function AssignmentPage() {
         {/* Task Columns */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <h2 className="text-xl font-semibold mb-4">Assigned tasks to the team</h2>
+            <h2 className="text-xl font-semibold mb-4">Workbasket</h2>
             <div className="space-y-4">
               {assignedTasks.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400">No tasks assigned yet.</p>
@@ -140,28 +184,53 @@ export default function AssignmentPage() {
           </div>
 
           <div>
-            <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
-            <div className="space-y-4">
-                
-              {teamTasks.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400">No team tasks yet.</p>
-              ) : (
-                teamTasks.map((task) => (
-                  <div key={task._id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                    <h3 className="font-bold">{task.title}</h3>
-                    {task.description && <p className="text-sm">{task.description}</p>}
-                    <p className="text-sm text-gray-500">Priority: {task.priority}</p>
-                    <p className="text-sm">Assigned by: {task.createdBy || "N/A"}</p>
-                  </div>
-                ))
-              )}
+  <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
+  <div className="space-y-4">
+    {Object.keys(teamTasks).length === 0 ? (
+      <p className="text-gray-500 dark:text-gray-400">No team tasks yet.</p>
+    ) : (
+      Object.entries(teamTasks).map(([user, stats]) => {
+        const percent =
+          stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+        return (
+          <div
+            key={user}
+            className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
+          >
+            <h3 className="font-bold">{user}</h3>
+
+            {/* Progress Bar */}
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
+              <div
+                className="bg-blue-600 h-4 transition-all duration-500"
+                style={{ width: `${percent}%` }}
+              ></div>
             </div>
+
+            {/* Stats Text */}
+            <p className="text-sm text-gray-500">
+              {stats.completed} / {stats.total} tasks completed ({percent}%)
+            </p>
           </div>
+        );
+      })
+    )}
+  </div>
+</div>
+
         </div>
       </div>
 
       {/* Timer widget */}
       <TaskTimerWidget />
     </div>
+  );
+}
+
+export default function AssignmentPage() {
+  return (
+    <SessionProvider>
+      <AssignmentContent />
+    </SessionProvider>
   );
 }

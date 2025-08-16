@@ -195,7 +195,7 @@ export default function TasksPage() {
   <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
     <Header />
     <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6 text-blue-900 dark:text-blue-300">Task Manager</h1>
+      <h1 className="text-3xl font-bold mb-6 text-blue-900 dark:text-blue-300">My Task</h1>
 
       {/* Filter Controls */}
       <div className="flex gap-2 mb-6">
@@ -214,60 +214,7 @@ export default function TasksPage() {
         ))}
       </div>
 
-      {/* Add Task */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md mb-8 space-y-4">
-        <h2 className="text-2xl font-semibold">Add a Task</h2>
-        <input
-          type="text"
-          placeholder="Task title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <textarea
-          placeholder="Description (optional)"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block mb-1 font-medium">Priority</label>
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              className="w-full border rounded-lg p-3 dark:bg-gray-700 dark:text-white dark:border-gray-600"
-            >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block mb-1 font-medium">Assign to</label>
-            <select
-              name="assignedTo"
-              value={assignedTo}
-              onChange={(e) => setAssignedTo(e.target.value)}
-              className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-            >
-              <option value="">Select user</option>
-              {users.map((user) => (
-                <option key={user.id || user._id} value={user.mail || user.email}>
-                  {user.displayName || user.mail || user.email}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <button
-          onClick={handleAddTask}
-          className="bg-blue-900 hover:bg-blue-800 text-white px-6 py-3 rounded-lg shadow-sm transition"
-        >
-          ➕ Add Task
-        </button>
-      </div>
+      
 
       {/* Task List */}
       <div className="space-y-4">

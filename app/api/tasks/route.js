@@ -1,3 +1,5 @@
+// app/api/tasks/route.js or app/api/tasks/[id]/route.js
+
 import { getServerSession } from "next-auth";
 import connectToDatabase from "@/lib/mongodb";
 import { authOptions } from "@/lib/authOptions";
@@ -11,8 +13,8 @@ export async function GET(req) {
 
   await connectToDatabase();
 
-  // Only return tasks assigned to the logged-in user
-  const tasks = await Task.find({ assignedTo: session.user.email });
+  // ✅ Fetch ALL tasks, regardless of assignedTo
+  const tasks = await Task.find({});
   return Response.json(tasks);
 }
 
@@ -25,11 +27,11 @@ export async function POST(req) {
   await connectToDatabase();
   const { title, description, assignedTo, priority } = await req.json();
 
-  // If assignedTo is not specified, assign to the current user
+  // ✅ Do not set assignedTo unless provided
   const newTask = new Task({
     title,
     description,
-    assignedTo: assignedTo || session.user.email,
+    assignedTo: assignedTo || null, // Null if not provided
     status: "pending",
     priority: priority || "Medium",
   });
