@@ -1,9 +1,11 @@
-// app/api/tasks/route.js or app/api/tasks/[id]/route.js
+// app/api/tasks/[id]/route.js
 
 import { getServerSession } from "next-auth";
 import connectToDatabase from "@/lib/mongodb";
 import { authOptions } from "@/lib/authOptions";
 import Task from "@/lib/models/Task";
+
+// app/api/tasks/[id]/route.js
 
 export async function GET(req) {
   const session = await getServerSession(authOptions);
@@ -13,10 +15,18 @@ export async function GET(req) {
 
   await connectToDatabase();
 
-  // ✅ Fetch ALL tasks, regardless of assignedTo
-  const tasks = await Task.find({});
+  // Parse query params
+  const { searchParams } = new URL(req.url);
+  const status = searchParams.get("status"); // ?status=completed
+
+  let filter = {};
+  if (status) filter.status = status;
+
+  // Fetch tasks with filter
+  const tasks = await Task.find(filter);
   return Response.json(tasks);
 }
+
 
 export async function POST(req) {
   const session = await getServerSession(authOptions);
@@ -27,7 +37,7 @@ export async function POST(req) {
   await connectToDatabase();
   const { title, description, assignedTo, priority } = await req.json();
 
-  // ✅ Do not set assignedTo unless provided
+  // Do not set assignedTo unless provided
   const newTask = new Task({
     title,
     description,
