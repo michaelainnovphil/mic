@@ -40,7 +40,8 @@ export default function OverviewPage() {
         const stats = statsRes.ok ? await statsRes.json() : [];
 
         if (res.ok && data.value) {
-          const usersWithClients = data.value.map((u) => {
+          const validUsers = data.value.filter((u) => u.jobTitle && u.jobTitle.trim() !== "");
+          const usersWithTasks = data.value.map((u) => {
             const emailKey = u.mail || u.userPrincipalName;
             const stat = stats.find((s) => s._id === emailKey);
 
@@ -48,16 +49,16 @@ export default function OverviewPage() {
               id: u.id,
               name: u.displayName || emailKey || "Unknown",
               email: emailKey || null,
-              clients: stat ? stat.completedTasks : 0, // ✅ completed tasks count
+              tasks: stat ? stat.completedTasks : 0, // ✅ completed tasks count
               photo: u.photo,
-              jobTitle: u.jobTitle || null,
+              jobTitle: u.jobTitle,
               hasLicense:
                 Array.isArray(u.assignedLicenses) &&
                 u.assignedLicenses.length > 0,
             };
           });
 
-          setUsers(usersWithClients);
+          setUsers(usersWithTasks);
         }
       } catch (err) {
         console.error("Failed to fetch users", err);
@@ -69,8 +70,8 @@ export default function OverviewPage() {
     fetchUsers();
   }, []);
 
-  // Sort employees by clients
-  const sortedEmployees = [...users].sort((a, b) => b.clients - a.clients);
+  // Sort employees by tasks
+  const sortedEmployees = [...users].sort((a, b) => b.tasks - a.tasks);
   const top3 = sortedEmployees.slice(0, 3);
   const others = sortedEmployees.slice(3);
 
@@ -193,7 +194,7 @@ export default function OverviewPage() {
               {/* Bar Chart */}
               <div>
                 <h3 className="text-md font-semibold mb-4 text-center">
-                  Clients per Employee
+                  Tasks per Employee
                 </h3>
                 <div className="w-full h-72">
                   <ResponsiveContainer>
@@ -202,7 +203,7 @@ export default function OverviewPage() {
                       <YAxis />
                       <Tooltip />
                       <Bar
-                        dataKey="clients"
+                        dataKey="tasks"
                         fill="#1E3A8A"
                         radius={[6, 6, 0, 0]}
                       />
