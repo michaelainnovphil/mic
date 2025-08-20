@@ -35,29 +35,72 @@ export default function OverviewPage() {
         const res = await fetch("/api/users");
         const data = await res.json();
 
-        // fetch completed tasks
-        const statsRes = await fetch("/api/overview");
-        const stats = statsRes.ok ? await statsRes.json() : [];
+        // fetch ALL tasks once
+        const tasksRes = await fetch("/api/tasks");
+        const allTasks = tasksRes.ok ? await tasksRes.json() : [];
 
         if (res.ok && data.value) {
-          const usersWithClients = data.value.map((u) => {
-            const emailKey = u.mail || u.userPrincipalName;
-            const stat = stats.find((s) => s._id === emailKey);
+          const validUsers = data.value.filter(
+            (u) =>
+              u.jobTitle &&
+              u.jobTitle.trim() !== "" &&
+              !u.jobTitle.toLowerCase().includes("chief")
+          );
+
+          // Build stats indexed by identifier (email/displayName), case-insensitive
+          const statsByKey = {}; // key -> { total, completed }
+          const bump = (key, isCompleted) => {
+            const k = (key || "unassigned").toString().trim().toLowerCase();
+            if (!statsByKey[k]) statsByKey[k] = { total: 0, completed: 0 };
+            statsByKey[k].total += 1;
+            if (isCompleted) statsByKey[k].completed += 1;
+          };
+
+          (allTasks || []).forEach((task) => {
+            const isCompleted = task.status === "completed";
+
+            // assignedTo can be array or string or missing
+            let assigned = [];
+            if (Array.isArray(task.assignedTo)) {
+              assigned = task.assignedTo;
+            } else if (typeof task.assignedTo === "string" && task.assignedTo.trim() !== "") {
+              assigned = [task.assignedTo];
+            } else {
+              assigned = ["unassigned"];
+            }
+
+            assigned.forEach((who) => bump(who, isCompleted));
+          });
+
+          const usersWithTasks = validUsers.map((u) => {
+            const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+            const nameKey = (u.displayName || "").toLowerCase();
+
+            const stat =
+              statsByKey[emailKey] ||
+              statsByKey[nameKey] ||
+              { total: 0, completed: 0 };
+
+            const completed = stat.completed || 0;
+            const total = stat.total || 0;
+            const percentage = total > 0 ? (completed / total) * 100 : 0;
 
             return {
               id: u.id,
-              name: u.displayName || emailKey || "Unknown",
-              email: emailKey || null,
-              clients: stat ? stat.completedTasks : 0, // ✅ completed tasks count
+              name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
+              email: u.mail || u.userPrincipalName || null,
+              completed,
+              total,
+              percentage, // <- used for ranking and chart
               photo: u.photo,
-              jobTitle: u.jobTitle || null,
+              jobTitle: u.jobTitle,
               hasLicense:
                 Array.isArray(u.assignedLicenses) &&
                 u.assignedLicenses.length > 0,
             };
           });
 
-          setUsers(usersWithClients);
+          setUsers(usersWithTasks);
         }
       } catch (err) {
         console.error("Failed to fetch users", err);
@@ -69,8 +112,8 @@ export default function OverviewPage() {
     fetchUsers();
   }, []);
 
-  // Sort employees by clients
-  const sortedEmployees = [...users].sort((a, b) => b.clients - a.clients);
+  // Sort employees by completion percentage
+  const sortedEmployees = [...users].sort((a, b) => b.percentage - a.percentage);
   const top3 = sortedEmployees.slice(0, 3);
   const others = sortedEmployees.slice(3);
 
@@ -78,7 +121,8 @@ export default function OverviewPage() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      <div className="max-w-6xl mx-auto p-6 space-y-10">
+      <div className="max-w-[90%] mx-auto p-6 space-y-10">
+
         {/* Daily Average */}
         <div className="bg-white shadow rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-6">
@@ -193,23 +237,32 @@ export default function OverviewPage() {
               {/* Bar Chart */}
               <div>
                 <h3 className="text-md font-semibold mb-4 text-center">
-                  Clients per Employee
+                  Tasks per Employee
                 </h3>
-                <div className="w-full h-72">
-                  <ResponsiveContainer>
-                    <BarChart data={users}>
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar
-                        dataKey="clients"
-                        fill="#1E3A8A"
-                        radius={[6, 6, 0, 0]}
+                <div className="w-full h-200 overflow-y-auto">
+                  {/* allow scroll if too many users */}
+                  <ResponsiveContainer width="100%" height={users.length * 40}>
+                    <BarChart
+                      data={users}
+                      layout="vertical" // horizontal bars
+                      margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                    >
+                      <XAxis type="number" domain={[0, 100]} />
+                      <YAxis
+                        dataKey="name"
+                        type="category"
+                        width={120}
+                        tick={{ fontSize: 12 }}
+                        interval={0}   // force all labels to show
                       />
+                      <Tooltip />
+                      {/* Use percentage-based bars */}
+                      <Bar dataKey="percentage" fill="#1E3A8A" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
+
             </div>
           )}
         </div>
