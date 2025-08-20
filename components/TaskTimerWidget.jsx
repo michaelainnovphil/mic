@@ -1,198 +1,125 @@
 // components/TaskTimerWidget.jsx
-
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
 import Draggable from "react-draggable";
 import * as XLSX from "xlsx";
 
-export default function TaskTimerWidget({ activeTask }) {
-  const [timeLeft, setTimeLeft] = useState(9 * 60 * 60); // 9 hours
+export default function TaskTimerWidget() {
+  const [timeLeft, setTimeLeft] = useState(9 * 60 * 60);
   const [visible, setVisible] = useState(false);
   const [task, setTask] = useState(null);
   const [taskType, setTaskType] = useState("");
   const intervalRef = useRef(null);
   const prevTaskRef = useRef(null);
   const logsRef = useRef([]);
-  const timerStartAtRef = useRef(null);
+  const shiftStartRef = useRef(null);
   const nodeRef = useRef(null);
 
-  
-const formatTime = (seconds) => {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${hrs.toString().padStart(2, "0")}:${mins
-    .toString()
-    .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-};
+  const formatTime = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    return `${hrs.toString().padStart(2, "0")}:${mins
+      .toString()
+      .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
 
-  // On widget load
-  useEffect(() => {
-    const stored = localStorage.getItem("taskTimerState");
-    if (stored) {
-      const { task: storedTask, taskType, timerStartAt } = JSON.parse(stored);
-      const elapsed = Math.floor((Date.now() - timerStartAt) / 1000);
+  const startShiftTimer = () => {
+    if (!shiftStartRef.current) {
+      const stored = localStorage.getItem("shiftStartAt");
+      if (stored) shiftStartRef.current = parseInt(stored, 10);
+      else {
+        shiftStartRef.current = Date.now();
+        localStorage.setItem("shiftStartAt", shiftStartRef.current);
+      }
+    }
+
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - shiftStartRef.current) / 1000);
       const remaining = Math.max(9 * 60 * 60 - elapsed, 0);
-
-      setTask(storedTask);
-      setTaskType(taskType || "");
       setTimeLeft(remaining);
-      setVisible(true);
-      timerStartAtRef.current = timerStartAt;
-    }
-  }, []);
-
-  // Countdown
-  useEffect(() => {
-    const totalDuration = 9 * 60 * 60;
-    const updateTimeLeft = () => {
-      if (!timerStartAtRef.current) return;
-      const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
-      const remaining = Math.max(totalDuration - elapsed, 0);
-      setTimeLeft(remaining);
-    };
-
-    intervalRef.current = setInterval(updateTimeLeft, 1000);
-    return () => clearInterval(intervalRef.current);
-  }, []);
-
-  // Auto-export at 5:30 PM
-  useEffect(() => {
-    const now = new Date();
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 30, 0);
-    const msUntilEnd = endOfDay - now;
-
-    if (msUntilEnd > 0) {
-      const timeout = setTimeout(exportLogsToExcel, msUntilEnd);
-      return () => clearTimeout(timeout);
-    }
-  }, []);
-
-  // Handle task switch (or initial task)
-  useEffect(() => {
-    if (!activeTask || !activeTask.task) return;
-
-    const stored = localStorage.getItem("taskTimerState");
-    const { task: storedTask } = stored ? JSON.parse(stored) : {};
-
-    if (storedTask?.title === activeTask.task?.title) {
-      // same task
-      return;
-    }
-
-    if (prevTaskRef.current) {
-      const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
-
-      logsRef.current.push({
-        task: prevTaskRef.current.title,
-        description: prevTaskRef.current.description,
-        taskType: prevTaskRef.current.type || "",
-        duration: formatTime(durationSeconds),
-        durationSeconds,
-      });
-
-      // ✅ Send hours to MongoDB
-      fetch("/api/update-task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          taskId: prevTaskRef.current.id,
-          durationSeconds,
-          durationHours: durationSeconds / 3600,
-        }),
-      }).catch(console.error);
-    }
-
-    // Set new task, don't reset timer
-    setTask(activeTask.task);
-    setTaskType(activeTask.taskType || "");
-    setVisible(true);
-
-    prevTaskRef.current = {
-      id: activeTask.task?._id, // ✅ store ID for updates
-      title: activeTask.task?.title,
-      type: activeTask.taskType || "",
-      description: activeTask.task?.description || "",
-      startTime: new Date(),
-    };
-
-    if (!timerStartAtRef.current) {
-      const now = Date.now();
-      timerStartAtRef.current = now;
-      localStorage.setItem(
-        "taskTimerState",
-        JSON.stringify({
-          task: activeTask.task,
-          taskType: activeTask.taskType || "",
-          timerStartAt: now,
-        })
-      );
-    }
-  }, [activeTask]);
-
-  // Save to localStorage
-  useEffect(() => {
-    if (!task || !timerStartAtRef.current) return;
-    localStorage.setItem(
-      "taskTimerState",
-      JSON.stringify({
-        task,
-        taskType,
-        timerStartAt: timerStartAtRef.current,
-      })
-    );
-  }, [task, taskType]);
-
-  useEffect(() => {
-    if (prevTaskRef.current) {
-      prevTaskRef.current.type = taskType;
-    }
-  }, [taskType]);
+      if (remaining === 0) stopShift(); // auto-stop at end of shift
+    }, 1000);
+  };
 
   const exportLogsToExcel = () => {
     const wsData = [["Task", "Description", "Type", "Duration"]];
     logsRef.current.forEach((log) => {
       wsData.push([log.task, log.description, log.taskType, log.duration]);
     });
-
     const worksheet = XLSX.utils.aoa_to_sheet(wsData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
     XLSX.writeFile(workbook, "task_logs.xlsx");
   };
 
-  const handleStop = () => {
-    setVisible(false);
-    clearInterval(intervalRef.current);
+  const handleStopTask = () => {
+    if (!prevTaskRef.current) return;
 
-    if (prevTaskRef.current) {
-      const endTime = new Date();
-      const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
+    const endTime = new Date();
+    const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
 
-      logsRef.current.push({
-        task: prevTaskRef.current.title,
-        taskType: prevTaskRef.current.type || "",
-        description: prevTaskRef.current.description || "",
-        duration: formatTime(durationSeconds),
-      });
+    logsRef.current.push({
+      task: prevTaskRef.current.title,
+      taskType: prevTaskRef.current.type || "",
+      description: prevTaskRef.current.description || "",
+      duration: formatTime(durationSeconds),
+    });
 
-      // ✅ Final MongoDB update
-      fetch("/api/update-task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          taskId: prevTaskRef.current.id,
-          durationSeconds,
-          durationHours: durationSeconds / 3600,
-        }),
-      }).catch(console.error);
-    }
+    fetch("/api/update-task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        taskId: prevTaskRef.current.id,
+        durationSeconds,
+        durationHours: durationSeconds / 3600,
+      }),
+    }).catch(console.error);
 
-    localStorage.removeItem("taskTimerState");
-    timerStartAtRef.current = null;
+    prevTaskRef.current = null;
   };
+
+  const stopShift = () => {
+    handleStopTask();
+    clearInterval(intervalRef.current);
+    shiftStartRef.current = null;
+    localStorage.removeItem("shiftStartAt");
+    localStorage.removeItem("activeTask");
+    setVisible(false);
+    setTask(null);
+    setTaskType("");
+    setTimeLeft(9 * 60 * 60);
+  };
+
+  useEffect(() => {
+    startShiftTimer();
+
+    const handleStorage = () => {
+      const stored = localStorage.getItem("activeTask");
+      if (!stored) return;
+
+      const { task: newTask, taskType } = JSON.parse(stored);
+      setTask(newTask);
+      setTaskType(taskType || "");
+      setVisible(true);
+
+      if (prevTaskRef.current) handleStopTask();
+
+      prevTaskRef.current = {
+        id: newTask._id,
+        title: newTask.title,
+        description: newTask.description,
+        type: taskType || "",
+        startTime: new Date(),
+      };
+    };
+
+    window.addEventListener("storage", handleStorage);
+    handleStorage(); // handle current localStorage immediately
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
 
   if (!visible || !task) return null;
 
@@ -232,16 +159,22 @@ const formatTime = (seconds) => {
           </select>
         </label>
 
-        <div className="text-center text-2xl font-mono mb-4">
-          {formatTime(timeLeft)}
-        </div>
+        <div className="text-center text-2xl font-mono mb-4">{formatTime(timeLeft)}</div>
 
-        <button
-          onClick={handleStop}
-          className="w-full bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-        >
-          Stop
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleStopTask}
+            className="flex-1 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+          >
+            Stop Task
+          </button>
+          <button
+            onClick={stopShift}
+            className="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+          >
+            Stop Shift
+          </button>
+        </div>
       </div>
     </Draggable>
   );
