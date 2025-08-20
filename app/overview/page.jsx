@@ -40,23 +40,30 @@ export default function OverviewPage() {
         const stats = statsRes.ok ? await statsRes.json() : [];
 
         if (res.ok && data.value) {
-          const validUsers = data.value.filter((u) => u.jobTitle && u.jobTitle.trim() !== "");
-          const usersWithTasks = data.value.map((u) => {
-            const emailKey = u.mail || u.userPrincipalName;
-            const stat = stats.find((s) => s._id === emailKey);
+          const validUsers = data.value.filter(
+  (u) =>
+    u.jobTitle &&
+    u.jobTitle.trim() !== "" &&
+    !u.jobTitle.toLowerCase().includes("chief")
+);
 
-            return {
-              id: u.id,
-              name: u.displayName || emailKey || "Unknown",
-              email: emailKey || null,
-              tasks: stat ? stat.completedTasks : 0, // ✅ completed tasks count
-              photo: u.photo,
-              jobTitle: u.jobTitle,
-              hasLicense:
-                Array.isArray(u.assignedLicenses) &&
-                u.assignedLicenses.length > 0,
-            };
-          });
+          const usersWithTasks = validUsers.map((u) => {
+  const emailKey = u.mail || u.userPrincipalName;
+  const stat = stats.find((s) => s._id === emailKey);
+
+  return {
+    id: u.id,
+    name: u.displayName || emailKey || "Unknown",
+    email: emailKey || null,
+    tasks: stat ? stat.completedTasks : 0, 
+    photo: u.photo,
+    jobTitle: u.jobTitle,
+    hasLicense:
+      Array.isArray(u.assignedLicenses) &&
+      u.assignedLicenses.length > 0,
+  };
+});
+
 
           setUsers(usersWithTasks);
         }
@@ -79,7 +86,8 @@ export default function OverviewPage() {
     <div className="min-h-screen bg-gray-50">
       <Header />
 
-      <div className="max-w-6xl mx-auto p-6 space-y-10">
+      <div className="max-w-[90%] mx-auto p-6 space-y-10">
+
         {/* Daily Average */}
         <div className="bg-white shadow rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-6">
@@ -192,25 +200,34 @@ export default function OverviewPage() {
               </div>
 
               {/* Bar Chart */}
-              <div>
-                <h3 className="text-md font-semibold mb-4 text-center">
-                  Tasks per Employee
-                </h3>
-                <div className="w-full h-72">
-                  <ResponsiveContainer>
-                    <BarChart data={users}>
-                      <XAxis dataKey="name" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar
-                        dataKey="tasks"
-                        fill="#1E3A8A"
-                        radius={[6, 6, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
+
+<div>
+  <h3 className="text-md font-semibold mb-4 text-center">
+    Tasks per Employee
+  </h3>
+  <div className="w-full h-200 overflow-y-auto"> {/* allow scroll if too many users */}
+    <ResponsiveContainer width="100%" height={users.length * 40}> 
+      <BarChart
+        data={users}
+        layout="vertical" // ✅ horizontal bars
+        margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+      >
+        <XAxis type="number" />
+        <YAxis
+          dataKey="name"
+          type="category"
+          width={120}
+          tick={{ fontSize: 12 }}
+          interval={0}   // ✅ force all labels to show
+        />
+        <Tooltip />
+        <Bar dataKey="tasks" fill="#1E3A8A" radius={[0, 6, 6, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</div>
+
+
             </div>
           )}
         </div>
