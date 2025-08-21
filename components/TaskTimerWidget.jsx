@@ -44,16 +44,40 @@ export default function TaskTimerWidget() {
     }, 1000);
   };
 
-  const exportLogsToExcel = () => {
-    const wsData = [["Task", "Description", "Type", "Duration"]];
-    logsRef.current.forEach((log) => {
-      wsData.push([log.task, log.description, log.taskType, log.duration]);
-    });
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
-    XLSX.writeFile(workbook, "task_logs.xlsx");
-  };
+    const exportLogsToExcel = () => {
+  if (!logsRef.current || logsRef.current.length === 0) {
+    alert("No task logs to export.");
+    return;
+  }
+
+  // Format today's date as YYYY-MM-DD
+  const today = new Date();
+  const formattedDate = today.toISOString().split("T")[0]; // "2025-08-21"
+
+  // Header row (added "Date" as first column)
+  const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
+
+  // Add log rows
+  logsRef.current.forEach((log) => {
+    wsData.push([
+      formattedDate,                 // Today's date
+      log.task || "",                // Task title
+      log.description || "",         // Task description
+      log.taskType || "",            // Task type
+      log.duration || "00:00:00",    // Duration
+    ]);
+  });
+
+  // Create worksheet and workbook
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
+
+  // Save file
+  XLSX.writeFile(workbook, "task_logs.xlsx");
+};
+
+
 
   const handleStopTask = () => {
     if (!prevTaskRef.current) return;
@@ -120,6 +144,12 @@ export default function TaskTimerWidget() {
     handleStorage(); // handle current localStorage immediately
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
+
+    useEffect(() => {
+    if (prevTaskRef.current) {
+      prevTaskRef.current.type = taskType; // keep ref in sync with dropdown
+    }
+  }, [taskType]);
 
   if (!visible || !task) return null;
 

@@ -13,15 +13,14 @@ function TasksContent() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [filter, setFilter] = useState("active");
   const { data: session } = useSession();
-
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [activeTask, setActiveTask] = useState(null);
+  
 
   useEffect(() => {
     if (session?.user?.email) fetchTasks();
