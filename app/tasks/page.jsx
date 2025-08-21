@@ -243,47 +243,92 @@ function TasksContent() {
           </div>
 
           {/* Start Button triggers TaskTimerWidget */}
-{/* Start Button triggers TaskTimerWidget */}
-<button
-  onClick={async () => {
-    try {
-      // update task status to in-progress using /status API
-      const res = await fetch(`/api/tasks/${task._id}/status`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "in-progress" }),
-      });
+{/* Buttons depending on task status */}
+<div className="flex gap-2">
+  {task.status === "pending" && (
+    <button
+      onClick={async () => {
+        try {
+          const res = await fetch(`/api/tasks/${task._id}/status`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "in-progress" }),
+          });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        return alert(data.error || "Failed to start task");
-      }
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            return alert(data.error || "Failed to start task");
+          }
 
-      const updatedTask = await res.json();
+          const updatedTask = await res.json();
+          localStorage.setItem(
+            "activeTask",
+            JSON.stringify({
+              task: updatedTask,
+              taskType: task.type || "",
+            })
+          );
+          window.dispatchEvent(new Event("storage"));
+          fetchTasks();
+        } catch (err) {
+          console.error(err);
+          alert("Error starting task");
+        }
+      }}
+      className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+    >
+      Start
+    </button>
+  )}
 
-      // Store activeTask so TaskTimerWidget can pick it up
-      localStorage.setItem(
-        "activeTask",
-        JSON.stringify({
-          task: updatedTask,
-          taskType: task.type || "",
-        })
-      );
+  {task.status === "in-progress" && (
+    <>
+      <button
+        onClick={() => {
+          // Resume just reloads activeTask into TaskTimerWidget
+          localStorage.setItem(
+            "activeTask",
+            JSON.stringify({
+              task,
+              taskType: task.type || "",
+            })
+          );
+          window.dispatchEvent(new Event("storage"));
+        }}
+        className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
+      >
+        Resume
+      </button>
 
-      // notify TaskTimerWidget
-      window.dispatchEvent(new Event("storage"));
+      <button
+        onClick={async () => {
+          try {
+            const res = await fetch(`/api/tasks/${task._id}/status`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status: "completed" }),
+            });
 
-      // refresh task list
-      fetchTasks();
-    } catch (err) {
-      console.error(err);
-      alert("Error starting task");
-    }
-  }}
-  className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
->
-  Start
-</button>
+            if (!res.ok) {
+              const data = await res.json().catch(() => ({}));
+              return alert(data.error || "Failed to complete task");
+            }
+
+            await res.json();
+            fetchTasks();
+          } catch (err) {
+            console.error(err);
+            alert("Error completing task");
+          }
+        }}
+        className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+      >
+        Complete
+      </button>
+    </>
+  )}
+</div>
+
 
 
 
