@@ -8,7 +8,7 @@ import TaskTimerWidget from "@/components/TaskTimerWidget";
 function AssignmentContent() {
   const { data: session } = useSession();
   const currentUserEmail = session?.user?.email || "";
-
+  const [refreshKey, setRefreshKey] = useState(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
@@ -18,12 +18,13 @@ function AssignmentContent() {
   const [assignedTo, setAssignedTo] = useState("");
 
   useEffect(() => {
-    if (currentUserEmail) {
-      fetchTeamMembers();
-      fetchAssignedTasks();
-      fetchTeamTasks();
-    }
-  }, [currentUserEmail]);
+  if (currentUserEmail) {
+    fetchTeamMembers();
+    fetchAssignedTasks();
+    fetchTeamTasks();
+  }
+}, [currentUserEmail, refreshKey]);
+
 
   const fetchTeamMembers = async () => {
     const res = await fetch("/api/users");

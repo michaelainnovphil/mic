@@ -18,6 +18,8 @@ import Header from "@/components/Header";
 export default function OverviewPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
 
   // Pie chart sample data (static for now)
   const pieData = [
@@ -29,88 +31,77 @@ export default function OverviewPage() {
   ];
 
   useEffect(() => {
-    async function fetchUsers() {
-      try {
-        // fetch users from Graph
-        const res = await fetch("/api/users");
-        const data = await res.json();
+  async function fetchUsersAndTasks() {
+    try {
+      // fetch users
+      const res = await fetch("/api/users");
+      const data = await res.json();
 
-        // fetch ALL tasks once
-        const tasksRes = await fetch("/api/tasks");
-        const allTasks = tasksRes.ok ? await tasksRes.json() : [];
+      // fetch ALL tasks
+      const tasksRes = await fetch("/api/tasks");
+      const allTasks = tasksRes.ok ? await tasksRes.json() : [];
 
-        if (res.ok && data.value) {
-          const validUsers = data.value.filter(
-            (u) =>
-              u.jobTitle &&
-              u.jobTitle.trim() !== "" &&
-              !u.jobTitle.toLowerCase().includes("chief")
-          );
+      if (res.ok && data.value) {
+        const validUsers = data.value.filter(
+          (u) =>
+            u.jobTitle &&
+            u.jobTitle.trim() !== "" &&
+            !u.jobTitle.toLowerCase().includes("chief")
+        );
 
-          // Build stats indexed by identifier (email/displayName), case-insensitive
-          const statsByKey = {}; // key -> { total, completed }
-          const bump = (key, isCompleted) => {
-            const k = (key || "unassigned").toString().trim().toLowerCase();
-            if (!statsByKey[k]) statsByKey[k] = { total: 0, completed: 0 };
-            statsByKey[k].total += 1;
-            if (isCompleted) statsByKey[k].completed += 1;
+        const statsByKey = {};
+        const bump = (key, isCompleted) => {
+          const k = (key || "unassigned").toString().trim().toLowerCase();
+          if (!statsByKey[k]) statsByKey[k] = { total: 0, completed: 0 };
+          statsByKey[k].total += 1;
+          if (isCompleted) statsByKey[k].completed += 1;
+        };
+
+        (allTasks || []).forEach((task) => {
+          const isCompleted = task.status === "completed";
+          let assigned = [];
+          if (Array.isArray(task.assignedTo)) assigned = task.assignedTo;
+          else if (typeof task.assignedTo === "string" && task.assignedTo.trim() !== "")
+            assigned = [task.assignedTo];
+          else assigned = ["unassigned"];
+
+          assigned.forEach((who) => bump(who, isCompleted));
+        });
+
+        const usersWithTasks = validUsers.map((u) => {
+          const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+          const nameKey = (u.displayName || "").toLowerCase();
+
+          const stat = statsByKey[emailKey] || statsByKey[nameKey] || { total: 0, completed: 0 };
+          const completed = stat.completed || 0;
+          const total = stat.total || 0;
+          const percentage = total > 0 ? (completed / total) * 100 : 0;
+
+          return {
+            id: u.id,
+            name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
+            email: u.mail || u.userPrincipalName || null,
+            completed,
+            total,
+            percentage,
+            photo: u.photo,
+            jobTitle: u.jobTitle,
+            hasLicense: Array.isArray(u.assignedLicenses) && u.assignedLicenses.length > 0,
           };
+        });
 
-          (allTasks || []).forEach((task) => {
-            const isCompleted = task.status === "completed";
-
-            // assignedTo can be array or string or missing
-            let assigned = [];
-            if (Array.isArray(task.assignedTo)) {
-              assigned = task.assignedTo;
-            } else if (typeof task.assignedTo === "string" && task.assignedTo.trim() !== "") {
-              assigned = [task.assignedTo];
-            } else {
-              assigned = ["unassigned"];
-            }
-
-            assigned.forEach((who) => bump(who, isCompleted));
-          });
-
-          const usersWithTasks = validUsers.map((u) => {
-            const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-            const nameKey = (u.displayName || "").toLowerCase();
-
-            const stat =
-              statsByKey[emailKey] ||
-              statsByKey[nameKey] ||
-              { total: 0, completed: 0 };
-
-            const completed = stat.completed || 0;
-            const total = stat.total || 0;
-            const percentage = total > 0 ? (completed / total) * 100 : 0;
-
-            return {
-              id: u.id,
-              name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
-              email: u.mail || u.userPrincipalName || null,
-              completed,
-              total,
-              percentage, // <- used for ranking and chart
-              photo: u.photo,
-              jobTitle: u.jobTitle,
-              hasLicense:
-                Array.isArray(u.assignedLicenses) &&
-                u.assignedLicenses.length > 0,
-            };
-          });
-
-          setUsers(usersWithTasks);
-        }
-      } catch (err) {
-        console.error("Failed to fetch users", err);
-      } finally {
-        setLoading(false);
+        setUsers(usersWithTasks);
       }
+    } catch (err) {
+      console.error("Failed to fetch users", err);
+    } finally {
+      setLoading(false);
     }
+  }
 
-    fetchUsers();
-  }, []);
+  fetchUsersAndTasks();
+}, [refreshKey]);
+
 
   // Sort employees by completion percentage
   const sortedEmployees = [...users].sort((a, b) => b.percentage - a.percentage);

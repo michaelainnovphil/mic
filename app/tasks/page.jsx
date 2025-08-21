@@ -150,7 +150,7 @@ function TasksContent() {
         {drawerOpen && (
           <div className="p-4 flex-1 overflow-y-auto">
             <h2 className="text-lg font-semibold text-blue-900 dark:text-blue-300 mb-4">
-              Unassigned Tasks
+              Workbasket
             </h2>
             {unassignedTasks.length > 0 ? (
               <ul className="space-y-3">
