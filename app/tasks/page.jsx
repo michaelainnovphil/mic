@@ -1,3 +1,5 @@
+// app/tasks/page.jsx
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -241,21 +243,49 @@ function TasksContent() {
           </div>
 
           {/* Start Button triggers TaskTimerWidget */}
-          <button
-  onClick={() => {
-    // Store the task to trigger the widget
-    localStorage.setItem(
-      "activeTask",
-      JSON.stringify({ task, taskType: task.type || "" })
-    );
+{/* Start Button triggers TaskTimerWidget */}
+<button
+  onClick={async () => {
+    try {
+      // update task status to in-progress using /status API
+      const res = await fetch(`/api/tasks/${task._id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "in-progress" }),
+      });
 
-    // Dispatch storage event to notify TaskTimerWidget
-    window.dispatchEvent(new Event("storage"));
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return alert(data.error || "Failed to start task");
+      }
+
+      const updatedTask = await res.json();
+
+      // Store activeTask so TaskTimerWidget can pick it up
+      localStorage.setItem(
+        "activeTask",
+        JSON.stringify({
+          task: updatedTask,
+          taskType: task.type || "",
+        })
+      );
+
+      // notify TaskTimerWidget
+      window.dispatchEvent(new Event("storage"));
+
+      // refresh task list
+      fetchTasks();
+    } catch (err) {
+      console.error(err);
+      alert("Error starting task");
+    }
   }}
   className="bg-green-500 text-white px-2 py-1 rounded hover:bg-green-600"
 >
   Start
 </button>
+
+
 
 
         </div>
