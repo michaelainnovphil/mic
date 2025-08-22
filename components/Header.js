@@ -42,7 +42,7 @@ const Header = () => {
           setPhoto(currentUser.photo || "");
           setToken(localStorage.getItem("token") || "");
 
-          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com"]; 
+          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com"]; 
           if (
             allowedEmails.includes(
               currentUser.mail?.toLowerCase() ||

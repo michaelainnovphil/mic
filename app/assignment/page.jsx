@@ -24,7 +24,7 @@ function AssignmentContent() {
   useEffect(() => {
     if (status === "loading") return;
 
-    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com"]; 
+    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com"]; 
     if (!session || !allowedUsers.includes(session.user.email)) {
       router.replace("/unauthorized");
     }
@@ -49,7 +49,7 @@ function AssignmentContent() {
     const data = await res.json();
 
     
-    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com"];
+    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com"];
     if (allowedUsers.includes(currentUserEmail)) {
       const unassigned = (data || []).filter(
         (task) =>

@@ -163,7 +163,7 @@ export default function OverviewPage() {
               {/* Top Performers */}
               <div>
                 <h3 className="text-md font-semibold mb-4 text-center">
-                  Top Performers
+                  Top Employees
                 </h3>
                 <div className="flex justify-center gap-8 mb-8">
                   {top3.map((person, index) => (
