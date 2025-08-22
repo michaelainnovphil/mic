@@ -8,6 +8,7 @@ const Header = () => {
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
   const [photo, setPhoto] = useState("");
+  const [isAllowed, setIsAllowed] = useState(false); 
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -31,16 +32,25 @@ const Header = () => {
 
       if (rjson.value && rjson.email) {
         const currentUser = rjson.value.find(
-  u =>
-    u.mail?.toLowerCase() === rjson.email.toLowerCase() ||
-    u.userPrincipalName?.toLowerCase() === rjson.email.toLowerCase()
-);
-
+          (u) =>
+            u.mail?.toLowerCase() === rjson.email.toLowerCase() ||
+            u.userPrincipalName?.toLowerCase() === rjson.email.toLowerCase()
+        );
 
         if (currentUser) {
           setName(currentUser.displayName || "");
           setPhoto(currentUser.photo || "");
           setToken(localStorage.getItem("token") || "");
+
+          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com"]; 
+          if (
+            allowedEmails.includes(
+              currentUser.mail?.toLowerCase() ||
+                currentUser.userPrincipalName?.toLowerCase()
+            )
+          ) {
+            setIsAllowed(true);
+          }
         }
       }
     };
@@ -69,6 +79,22 @@ const Header = () => {
           >
             Dashboard
           </Link>
+          <Link
+            href="/overview"
+            className="text-gray-700 hover:text-blue-600 font-medium transition"
+          >
+            Team Overview
+          </Link>
+
+          
+          {isAllowed && (
+            <Link
+              href="/assignment"
+              className="text-blue-900 font-regular px-3 py-1 border border-blue-900 rounded hover:bg-blue-900 hover:text-white transition"
+            >
+              Assign Task
+            </Link>
+          )}
 
           {/* Profile Photo + Dropdown */}
           {photo && (
@@ -79,12 +105,7 @@ const Header = () => {
                 className="w-10 h-10 rounded-full border border-gray-300 cursor-pointer"
               />
               <div className="absolute right-0 mt-2 w-40 bg-white border rounded shadow-md opacity-0 group-hover:opacity-100 transition">
-                <button
-                  onClick={handleLogout}
-                  className="block w-full text-left px-4 py-2 hover:bg-gray-100"
-                >
-                  Logout
-                </button>
+                
               </div>
             </div>
           )}

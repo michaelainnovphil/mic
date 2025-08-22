@@ -2,11 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import TaskTimerWidget from "@/components/TaskTimerWidget";
 
 function AssignmentContent() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
   const currentUserEmail = session?.user?.email || "";
   const [refreshKey, setRefreshKey] = useState(0);
   const [title, setTitle] = useState("");
@@ -17,14 +20,23 @@ function AssignmentContent() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [assignedTo, setAssignedTo] = useState("");
 
+  // Restrict access to assignment page
   useEffect(() => {
-  if (currentUserEmail) {
-    fetchTeamMembers();
-    fetchAssignedTasks();
-    fetchTeamTasks();
-  }
-}, [currentUserEmail, refreshKey]);
+    if (status === "loading") return;
 
+    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com"]; 
+    if (!session || !allowedUsers.includes(session.user.email)) {
+      router.replace("/unauthorized");
+    }
+  }, [session, status, router]);
+
+  useEffect(() => {
+    if (currentUserEmail) {
+      fetchTeamMembers();
+      fetchAssignedTasks();
+      fetchTeamTasks();
+    }
+  }, [currentUserEmail, refreshKey]);
 
   const fetchTeamMembers = async () => {
     const res = await fetch("/api/users");
@@ -33,82 +45,90 @@ function AssignmentContent() {
   };
 
   const fetchAssignedTasks = async () => {
-  const res = await fetch("/api/tasks");
-  const data = await res.json();
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
 
-  // Tasks are "unassigned" if no one is in the array OR it includes "unassigned"
-  const unassigned = (data || []).filter(
-    (task) =>
-      Array.isArray(task.assignedTo) &&
-      (task.assignedTo.length === 0 || task.assignedTo.includes("unassigned"))
-  );
-
-  setAssignedTasks(unassigned);
-};
-
-
-
+    
+    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com"];
+    if (allowedUsers.includes(currentUserEmail)) {
+      const unassigned = (data || []).filter(
+        (task) =>
+          Array.isArray(task.assignedTo) &&
+          (task.assignedTo.length === 0 || task.assignedTo.includes("unassigned"))
+      );
+      setAssignedTasks(unassigned);
+    } else {
+      // Non-managers: only see tasks created by their manager
+      const managerTasks = (data || []).filter(
+        (task) => task.createdBy && task.createdBy !== currentUserEmail
+      );
+      setAssignedTasks(managerTasks);
+    }
+  };
 
   const fetchTeamTasks = async () => {
-  const res = await fetch("/api/tasks");
-  const data = await res.json();
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
 
-  // Group tasks by user (from assignedTo array)
-  const userStats = {};
+    // Group tasks by user (from assignedTo array)
+    const userStats = {};
 
-  (data || []).forEach((task) => {
-    if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
-      task.assignedTo.forEach((user) => {
-        if (!userStats[user]) {
-          userStats[user] = { total: 0, completed: 0 };
-        }
-        userStats[user].total += 1;
-        if (task.status === "completed") {
-          userStats[user].completed += 1;
-        }
-      });
-    }
-  });
+    (data || []).forEach((task) => {
+      if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
+        task.assignedTo.forEach((user) => {
+          if (!userStats[user]) {
+            userStats[user] = { total: 0, completed: 0 };
+          }
+          userStats[user].total += 1;
+          if (task.status === "completed") {
+            userStats[user].completed += 1;
+          }
+        });
+      }
+    });
 
-  setTeamTasks(userStats);
-};
-
+    setTeamTasks(userStats);
+  };
 
   const handleAddTask = async () => {
-  if (!title) return alert("Title is required");
+    if (!title) return alert("Title is required");
 
-  const assignedValue = assignedTo.trim() === "" ? "unassigned" : assignedTo;
+    const assignedValue = assignedTo.trim() === "" ? "unassigned" : assignedTo;
 
-  const res = await fetch("/api/tasks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      title,
-      description,
-      priority,
-      assignedTo: assignedValue,
-      createdBy: currentUserEmail,
-    }),
-  });
+    const res = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description,
+        priority,
+        assignedTo: assignedValue,
+        createdBy: currentUserEmail,
+      }),
+    });
 
-  if (res.ok) {
-    setTitle("");
-    setDescription("");
-    setPriority("Medium");
-    setAssignedTo("");
-    await fetchAssignedTasks(); // refresh assigned tasks
-  } else {
-    const data = await res.json();
-    alert(data.error || "Failed to add task");
-  }
-};
+    if (res.ok) {
+      setTitle("");
+      setDescription("");
+      setPriority("Medium");
+      setAssignedTo("");
+      await fetchAssignedTasks(); // refresh assigned tasks
+    } else {
+      const data = await res.json();
+      alert(data.error || "Failed to add task");
+    }
+  };
+
+  if (status === "loading") return <p>Loading...</p>;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
       <Header />
 
       <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-blue-900 dark:text-blue-300">Assignment</h1>
+        <h1 className="text-3xl font-bold mb-6 text-blue-900 dark:text-blue-300">
+          Assignment
+        </h1>
 
         {/* Add Task */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md mb-8 space-y-4">
@@ -170,14 +190,23 @@ function AssignmentContent() {
             <h2 className="text-xl font-semibold mb-4">Workbasket</h2>
             <div className="space-y-4">
               {assignedTasks.length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400">No tasks assigned yet.</p>
+                <p className="text-gray-500 dark:text-gray-400">
+                  No tasks assigned yet.
+                </p>
               ) : (
                 assignedTasks.map((task) => (
-                  <div key={task._id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                  <div
+                    key={task._id}
+                    className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow"
+                  >
                     <h3 className="font-bold">{task.title}</h3>
                     {task.description && <p className="text-sm">{task.description}</p>}
-                    <p className="text-sm text-gray-500">Priority: {task.priority}</p>
-                    {task.assignedTo && <p className="text-sm">Assigned to: {task.assignedTo}</p>}
+                    <p className="text-sm text-gray-500">
+                      Priority: {task.priority}
+                    </p>
+                    {task.assignedTo && (
+                      <p className="text-sm">Assigned to: {task.assignedTo}</p>
+                    )}
                   </div>
                 ))
               )}
@@ -185,40 +214,44 @@ function AssignmentContent() {
           </div>
 
           <div>
-  <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
-  <div className="space-y-4">
-    {Object.keys(teamTasks).length === 0 ? (
-      <p className="text-gray-500 dark:text-gray-400">No team tasks yet.</p>
-    ) : (
-      Object.entries(teamTasks).map(([user, stats]) => {
-        const percent =
-          stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-        return (
-          <div
-            key={user}
-            className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
-          >
-            <h3 className="font-bold">{user}</h3>
+            <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
+            <div className="space-y-4">
+              {Object.keys(teamTasks).length === 0 ? (
+                <p className="text-gray-500 dark:text-gray-400">
+                  No team tasks yet.
+                </p>
+              ) : (
+                Object.entries(teamTasks).map(([user, stats]) => {
+                  const percent =
+                    stats.total > 0
+                      ? Math.round((stats.completed / stats.total) * 100)
+                      : 0;
+                  return (
+                    <div
+                      key={user}
+                      className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
+                    >
+                      <h3 className="font-bold">{user}</h3>
 
-            {/* Progress Bar */}
-            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
-              <div
-                className="bg-blue-600 h-4 transition-all duration-500"
-                style={{ width: `${percent}%` }}
-              ></div>
+                      {/* Progress Bar */}
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
+                        <div
+                          className="bg-blue-600 h-4 transition-all duration-500"
+                          style={{ width: `${percent}%` }}
+                        ></div>
+                      </div>
+
+                      {/* Stats Text */}
+                      <p className="text-sm text-gray-500">
+                        {stats.completed} / {stats.total} tasks completed ({percent}
+                        %)
+                      </p>
+                    </div>
+                  );
+                })
+              )}
             </div>
-
-            {/* Stats Text */}
-            <p className="text-sm text-gray-500">
-              {stats.completed} / {stats.total} tasks completed ({percent}%)
-            </p>
           </div>
-        );
-      })
-    )}
-  </div>
-</div>
-
         </div>
       </div>
 

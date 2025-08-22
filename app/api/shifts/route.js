@@ -3,13 +3,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 
-// Safely pick start/end from any shift shape
 function extractStartEnd(shift) {
   const c = shift.sharedShift ?? shift.draftShift ?? shift;
   const start =
     c?.startDateTime ??
     c?.start?.dateTime ??
-    c?.start ??
+    c?.start ?? 
     null;
   const end =
     c?.endDateTime ??
@@ -19,7 +18,6 @@ function extractStartEnd(shift) {
   return { start, end };
 }
 
-// Fetch every page from Graph (@odata.nextLink)
 async function fetchAllShifts(teamId, accessToken) {
   const all = [];
   let url = `https://graph.microsoft.com/v1.0/teams/${teamId}/schedule/shifts?$top=200`;

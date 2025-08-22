@@ -44,63 +44,73 @@ export default function TaskTimerWidget() {
     }, 1000);
   };
 
-    const exportLogsToExcel = () => {
-  if (!logsRef.current || logsRef.current.length === 0) {
-    alert("No task logs to export.");
-    return;
-  }
+  const exportLogsToExcel = () => {
+    if (!logsRef.current || logsRef.current.length === 0) {
+      alert("No task logs to export.");
+      return;
+    }
 
-  // Format today's date as YYYY-MM-DD
-  const today = new Date();
-  const formattedDate = today.toISOString().split("T")[0]; // "2025-08-21"
+    const today = new Date();
+    const formattedDate = today.toISOString().split("T")[0];
 
-  // Header row (added "Date" as first column)
-  const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
+    const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
 
-  // Add log rows
-  logsRef.current.forEach((log) => {
-    wsData.push([
-      formattedDate,                 // Today's date
-      log.task || "",                // Task title
-      log.description || "",         // Task description
-      log.taskType || "",            // Task type
-      log.duration || "00:00:00",    // Duration
-    ]);
-  });
-
-  // Create worksheet and workbook
-  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
-
-  // Save file
-  XLSX.writeFile(workbook, "task_logs.xlsx");
-};
+    logsRef.current.forEach((log) => {
+  wsData.push([
+    formattedDate,
+    log.task || "",
+    log.description || "",
+    log.taskType || "",
+    formatTime(log.durationSeconds || 0), 
+  ]);
+});
 
 
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
 
-  const handleStopTask = () => {
+    XLSX.writeFile(workbook, "task_logs.xlsx");
+  };
+
+ 
+  const handleStopTask = async () => {
     if (!prevTaskRef.current) return;
 
     const endTime = new Date();
-    const durationSeconds = Math.floor((endTime - prevTaskRef.current.startTime) / 1000);
+    const durationSeconds = Math.floor(
+      (endTime - prevTaskRef.current.startTime) / 1000
+    );
 
-    logsRef.current.push({
-      task: prevTaskRef.current.title,
-      taskType: prevTaskRef.current.type || "",
-      description: prevTaskRef.current.description || "",
-      duration: formatTime(durationSeconds),
-    });
+    const logEntry = {
+  task: prevTaskRef.current.title,
+  taskType: prevTaskRef.current.type || "",
+  description: prevTaskRef.current.description || "",
+  durationSeconds, 
+  email: prevTaskRef.current.assignedTo || "unknown",
+  taskId: prevTaskRef.current.id,
+  timestamp: new Date().toISOString(),
+};
 
-    fetch("/api/update-task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        taskId: prevTaskRef.current.id,
-        durationSeconds,
-        durationHours: durationSeconds / 3600,
-      }),
-    }).catch(console.error);
+
+    // store locally for Excel export
+    logsRef.current.push(logEntry);
+
+    // send to backend
+    try {
+      await fetch("/api/task-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: logEntry.email,
+          taskId: logEntry.taskId,
+          duration: durationSeconds,
+          timestamp: logEntry.timestamp,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to save log:", err);
+    }
 
     prevTaskRef.current = null;
   };
@@ -136,18 +146,19 @@ export default function TaskTimerWidget() {
         title: newTask.title,
         description: newTask.description,
         type: taskType || "",
+        assignedTo: newTask.assignedTo || "unknown",
         startTime: new Date(),
       };
     };
 
     window.addEventListener("storage", handleStorage);
-    handleStorage(); // handle current localStorage immediately
+    handleStorage();
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
     if (prevTaskRef.current) {
-      prevTaskRef.current.type = taskType; // keep ref in sync with dropdown
+      prevTaskRef.current.type = taskType;
     }
   }, [taskType]);
 
@@ -189,7 +200,9 @@ export default function TaskTimerWidget() {
           </select>
         </label>
 
-        <div className="text-center text-2xl font-mono mb-4">{formatTime(timeLeft)}</div>
+        <div className="text-center text-2xl font-mono mb-4">
+          {formatTime(timeLeft)}
+        </div>
 
         <div className="flex gap-2">
           <button
