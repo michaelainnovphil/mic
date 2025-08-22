@@ -1,4 +1,6 @@
 // app/api/shifts/route.js
+"use server";
+
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
@@ -8,7 +10,7 @@ function extractStartEnd(shift) {
   const start =
     c?.startDateTime ??
     c?.start?.dateTime ??
-    c?.start ?? 
+    c?.start ??
     null;
   const end =
     c?.endDateTime ??
@@ -53,18 +55,16 @@ async function resolveEmails(hoursById, accessToken) {
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
 
-      if (!res.ok) {
+      let email = graphUserId.toLowerCase().trim();
+      if (res.ok) {
+        const u = await res.json();
+        email = (u.mail || u.userPrincipalName || email).toLowerCase().trim();
+      } else {
         const txt = await res.text().catch(() => "");
         console.warn(`User lookup failed for ${graphUserId}: ${res.status} ${txt}`);
-        const key = graphUserId.toLowerCase().trim();
-        hoursByEmail[key] = (hoursByEmail[key] || 0) + Number(hrs || 0);
-        continue;
       }
 
-      const u = await res.json();
-      const email = (u.mail || u.userPrincipalName || "").toLowerCase().trim();
-      const key = email || graphUserId.toLowerCase().trim();
-      hoursByEmail[key] = (hoursByEmail[key] || 0) + Number(hrs || 0);
+      hoursByEmail[email] = (hoursByEmail[email] || 0) + Number(hrs || 0);
     } catch (e) {
       console.warn(`Error resolving user ${graphUserId}:`, e?.message || e);
       const key = graphUserId.toLowerCase().trim();
@@ -87,41 +87,53 @@ export async function GET() {
       return NextResponse.json({ error: "Missing MS_TEAM_ID" }, { status: 500 });
     }
 
-    // Define current month start and next month start
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    // Pull all shifts
     const shifts = await fetchAllShifts(teamId, session.accessToken);
 
-    // Sum hours per Graph userId for current month only
+    // Sum hours per Graph userId for current month, including rest days as 0 hours
     const hoursById = {};
-    for (const shift of shifts) {
+    const shiftDetailsPerUser = {};
+
+    shifts.forEach((shift) => {
       const userId = shift.userId;
-      if (!userId) continue;
+      if (!userId) return;
 
       const { start, end } = extractStartEnd(shift);
-      if (!start || !end) continue;
+      if (!start || !end) return;
 
       const s = new Date(start);
       const e = new Date(end);
 
-      // This month only
       if (s >= monthStart && s < nextMonthStart) {
         const hours = (e - s) / (1000 * 60 * 60);
-        hoursById[userId] = (hoursById[userId] || 0) + hours;
-      }
-    }
 
-    //  Map user ids -> emails
+        hoursById[userId] = (hoursById[userId] || 0) + hours;
+
+        if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
+        shiftDetailsPerUser[userId].push({
+          start: s.toISOString(),
+          end: e.toISOString(),
+          hours,
+          note: shift.sharedShift?.notes || shift.displayName || "",
+        });
+      }
+    });
+
     const shiftHoursPerUser = await resolveEmails(hoursById, session.accessToken);
 
-    console.log(
-      `Shifts OK: ${shifts.length} shifts fetched, ${Object.keys(shiftHoursPerUser).length} users (this month only)`
-    );
+    // Attach shift details per email for frontend use
+    const shiftDetailsByEmail = {};
+    for (const [userId, details] of Object.entries(shiftDetailsPerUser)) {
+      const email = Object.keys(shiftHoursPerUser).find(
+        (e) => e.toLowerCase().trim() === userId.toLowerCase().trim()
+      );
+      if (email) shiftDetailsByEmail[email] = details;
+    }
 
-    return NextResponse.json({ shiftHoursPerUser });
+    return NextResponse.json({ shiftHoursPerUser, shiftDetailsPerUser: shiftDetailsByEmail });
   } catch (error) {
     console.error("Shifts API error:", error?.message || error);
     return NextResponse.json(

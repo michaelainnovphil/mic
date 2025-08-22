@@ -230,7 +230,7 @@ export default function OverviewPage() {
                 <h3 className="text-md font-semibold mb-4 text-center">
                   Tasks per Employee
                 </h3>
-                <div className="w-full h-200 overflow-y-auto">
+                <div className="w-full h-150 overflow-y-auto">
                   {/* allow scroll if too many users */}
                   <ResponsiveContainer width="100%" height={users.length * 40}>
                     <BarChart

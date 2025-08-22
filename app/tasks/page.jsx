@@ -43,11 +43,18 @@ function TasksContent() {
     const myEmail = session.user.email.toLowerCase();
 
     // My tasks
-    const mine = filtered.filter(
+    let mine = filtered.filter(
       (task) =>
         Array.isArray(task.assignedTo) &&
         task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
     );
+
+    // Sort by priority (High → Medium → Low)
+    mine.sort((a, b) => {
+      const priorityOrder = { High: 1, Medium: 2, Low: 3 };
+      return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+    });
+
     setTasks(mine);
 
     // Unassigned tasks (restore correct logic)
@@ -58,11 +65,19 @@ function TasksContent() {
         : [task.assignedTo.toString().toLowerCase().trim()];
       return assigned.length === 0 || assigned.every((a) => !a || a === "unassigned");
     });
+
+    //  sort unassigned tasks by priority
+    unassigned.sort((a, b) => {
+      const priorityOrder = { High: 1, Medium: 2, Low: 3 };
+      return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+    });
+
     setUnassignedTasks(unassigned);
   } catch (err) {
     console.error(err);
   }
 };
+
 
   // Add new task
   const handleAddTask = async () => {
@@ -220,15 +235,33 @@ function TasksContent() {
       else if (task.status === "in-progress") statusColor = "bg-green-100 text-green-800";
       else if (task.status === "completed") statusColor = "bg-gray-200 text-gray-700";
 
+      // Priority indicator color
+  let priorityColor =
+    task.priority === "High"
+      ? "bg-red-100 text-red-700"
+      : task.priority === "Low"
+      ? "bg-yellow-100 text-yellow-700"
+      : "bg-gray-100 text-gray-700";
+
       return (
         <div
           key={task._id}
           className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow flex justify-between items-center gap-4"
         >
           <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
             <h3 className="text-lg font-bold text-blue-900 dark:text-blue-300">
               {task.title}
-            </h3>
+
+              </h3>
+              {task.priority === "High" && (
+            <span className="px-2 py-0.5 text-xs font-semibold bg-red-500 text-white rounded-full">
+              HIGH
+            </span>
+          )}
+            
+            </div>
+            
             {task.description && (
               <p className="text-sm text-gray-600 dark:text-gray-300">{task.description}</p>
             )}
@@ -319,7 +352,7 @@ function TasksContent() {
           } catch (err) {
             console.error(err);
             alert("Error completing task");
-          }
+          } 
         }}
         className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
       >
@@ -351,34 +384,37 @@ function TasksContent() {
     <Dialog
       open={modalOpen}
       onClose={() => setModalOpen(false)}
-      className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40"
+      className="relative z-50"
     >
-      <Dialog.Panel className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg w-96">
-        <h3 className="text-lg font-bold mb-4 text-blue-900 dark:text-blue-300">
-          Assign Task
-        </h3>
-        {selectedTask && (
-          <>
-            <p className="mb-2">
-              Do you want to assign <strong>{selectedTask.title}</strong> to yourself?
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAssignToMe}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg"
-              >
-                Assign to Me
-              </button>
-            </div>
-          </>
-        )}
-      </Dialog.Panel>
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <Dialog.Panel className="bg-white/90 dark:bg-gray-800/90 p-6 rounded-xl shadow-xl w-96 backdrop-blur">
+          <h3 className="text-lg font-bold mb-4 text-blue-900 dark:text-blue-300">
+            Assign Task
+          </h3>
+          {selectedTask && (
+            <>
+              <p className="mb-2">
+                Do you want to assign <strong>{selectedTask.title}</strong> to yourself?
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAssignToMe}
+                  className="px-4 py-2 bg-blue-900 text-white rounded-lg"
+                >
+                  Assign to Me
+                </button>
+              </div>
+            </>
+          )}
+        </Dialog.Panel>
+      </div>
     </Dialog>
   </div>
 );

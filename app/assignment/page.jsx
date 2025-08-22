@@ -67,28 +67,31 @@ function AssignmentContent() {
   };
 
   const fetchTeamTasks = async () => {
-    const res = await fetch("/api/tasks");
-    const data = await res.json();
+  const res = await fetch("/api/tasks");
+  const data = await res.json();
 
-    // Group tasks by user (from assignedTo array)
-    const userStats = {};
+  const userStats = {};
 
-    (data || []).forEach((task) => {
-      if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
-        task.assignedTo.forEach((user) => {
-          if (!userStats[user]) {
-            userStats[user] = { total: 0, completed: 0 };
-          }
-          userStats[user].total += 1;
-          if (task.status === "completed") {
-            userStats[user].completed += 1;
-          }
-        });
-      }
-    });
+  (data || []).forEach((task) => {
+    if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
+      task.assignedTo.forEach((user) => {
+        // 🚫 Skip "unassigned" and empty values
+        if (!user || user.toLowerCase() === "unassigned") return;
 
-    setTeamTasks(userStats);
-  };
+        if (!userStats[user]) {
+          userStats[user] = { total: 0, completed: 0 };
+        }
+        userStats[user].total += 1;
+        if (task.status === "completed") {
+          userStats[user].completed += 1;
+        }
+      });
+    }
+  });
+
+  setTeamTasks(userStats);
+};
+
 
   const handleAddTask = async () => {
     if (!title) return alert("Title is required");
