@@ -105,35 +105,21 @@ export default function OverviewPage() {
     fetchUsersAndTasks();
   }, [refreshKey]);
 
-  // fetch today's attendance/tardiness from Graph sign-ins
+  // fetch today's attendance/tardiness from Graph
   useEffect(() => {
     async function fetchDailyStats() {
       try {
-        const resUsers = await fetch("/api/users");
-        const dataUsers = await resUsers.json();
-        const totalUsers = (dataUsers.value || []).length;
+        const res = await fetch("/api/presence");
+        const data = await res.json();
 
-        const resLogins = await fetch("/api/logins/today");
-        const logins = resLogins.ok ? await resLogins.json() : [];
-
-        // check login times
-        const present = logins.filter((l) => {
-          const t = new Date(l.loginTime);
-          return (
-            t.getHours() < 8 ||
-            (t.getHours() === 8 && t.getMinutes() <= 30)
-          );
-        }).length;
-
-        const tardy = logins.filter((l) => {
-          const t = new Date(l.loginTime);
-          return t.getHours() === 8 && t.getMinutes() > 30;
-        }).length;
-
-        setDailyStats({
-          attendance: totalUsers > 0 ? (present / totalUsers) * 100 : 0,
-          tardiness: totalUsers > 0 ? (tardy / totalUsers) * 100 : 0,
-        });
+        if (res.ok && data) {
+          setDailyStats({
+            attendance: Math.round(data.percent || 0),
+            tardiness: Math.round(data.tardyPercent || 0),
+          });
+        } else {
+          console.error("Failed to fetch presence stats", data);
+        }
       } catch (err) {
         console.error("Failed to fetch daily stats", err);
       }
