@@ -165,7 +165,7 @@ async function computeFromPresenceSnapshot(token) {
       });
       (p.value || []).forEach(x => presences.push(x));
     } catch (e) {
-      // If Presence.Read.All wasn’t consented we’ll just break and return zeros instead of crashing
+      
       if (e?.status === 403) {
         return {
           source: "presence.snapshot",

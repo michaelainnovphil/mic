@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import Image from "next/image";
 import Header from "@/components/Header";
+import { Dialog } from "@headlessui/react";
 
 export default function OverviewPage() {
   const [users, setUsers] = useState([]);
@@ -22,17 +23,17 @@ export default function OverviewPage() {
   const [dailyStats, setDailyStats] = useState({
     attendance: 0,
     tardiness: 0,
+    details: [],
   });
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
 
   // fetch users and tasks (monthly stats)
   useEffect(() => {
     async function fetchUsersAndTasks() {
       try {
-        // fetch users
         const res = await fetch("/api/users");
         const data = await res.json();
 
-        // fetch ALL tasks
         const tasksRes = await fetch("/api/tasks");
         const allTasks = tasksRes.ok ? await tasksRes.json() : [];
 
@@ -116,6 +117,7 @@ export default function OverviewPage() {
           setDailyStats({
             attendance: Math.round(data.percent || 0),
             tardiness: Math.round(data.tardyPercent || 0),
+            details: data.details || [],
           });
         } else {
           console.error("Failed to fetch presence stats", data);
@@ -128,20 +130,18 @@ export default function OverviewPage() {
     fetchDailyStats();
   }, []);
 
-  // sort employees by completion percentage
   const sortedEmployees = [...users].sort(
     (a, b) => b.percentage - a.percentage
   );
   const top3 = sortedEmployees.slice(0, 3);
   const others = sortedEmployees.slice(3);
 
-  // dynamic pie data
   const pieData = [
     { name: "Attendance", value: Math.round(dailyStats.attendance) },
     { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
-    { name: "Adherence", value: 92 }, // placeholder
-    { name: "Disciplinary Action", value: 88 }, // placeholder
-    { name: "On-Time Completion", value: 91 }, // placeholder
+    { name: "Adherence", value: 92 },
+    { name: "Disciplinary Action", value: 88 },
+    { name: "On-Time Completion", value: 91 },
   ];
 
   return (
@@ -156,7 +156,13 @@ export default function OverviewPage() {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
             {pieData.map((item) => (
-              <div key={item.name} className="flex flex-col items-center">
+              <div
+                key={item.name}
+                className="flex flex-col items-center cursor-pointer"
+                onClick={() =>
+                  item.name === "Attendance" && setShowAttendanceModal(true)
+                }
+              >
                 <div className="relative w-28 h-28">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -184,6 +190,56 @@ export default function OverviewPage() {
             ))}
           </div>
         </div>
+
+        {/* Attendance Modal */}
+        <Dialog
+          open={showAttendanceModal}
+          onClose={() => setShowAttendanceModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+              <Dialog.Title className="text-lg font-semibold">
+                Attendance Details
+              </Dialog.Title>
+              <p className="mt-2 text-sm text-gray-600">
+                {dailyStats.attendance}% present, {dailyStats.tardiness}% tardy.
+              </p>
+
+              <ul className="mt-4 space-y-2 text-sm max-h-64 overflow-y-auto">
+                {dailyStats.details.length > 0 ? (
+                  dailyStats.details.map((user) => (
+                    <li
+                      key={user.userId}
+                      className={`flex justify-between p-2 rounded ${
+                        user.status === "absent"
+                          ? "bg-red-100 text-red-700"
+                          : user.status === "tardy"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-green-100 text-green-700"
+                      }`}
+                    >
+                      <span>{user.name}</span>
+                      <span className="italic">{user.status}</span>
+                    </li>
+                  ))
+                ) : (
+                  <p className="text-gray-500">No attendance records.</p>
+                )}
+              </ul>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowAttendanceModal(false)}
+                  className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+                >
+                  Close
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
 
         {/* Monthly Average */}
         <div className="bg-white shadow rounded-2xl p-6">
