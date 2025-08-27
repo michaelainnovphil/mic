@@ -19,101 +19,150 @@ export default function OverviewPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [dailyStats, setDailyStats] = useState({
+    attendance: 0,
+    tardiness: 0,
+  });
 
-
-  // Pie chart sample data (static for now)
-  const pieData = [
-    { name: "Attendance", value: 90 },
-    { name: "Tardiness", value: 85 },
-    { name: "Adherence", value: 92 },
-    { name: "Disciplinary Action", value: 88 },
-    { name: "On-Time Completion", value: 91 },
-  ];
-
+  // fetch users and tasks (monthly stats)
   useEffect(() => {
-  async function fetchUsersAndTasks() {
-    try {
-      // fetch users
-      const res = await fetch("/api/users");
-      const data = await res.json();
+    async function fetchUsersAndTasks() {
+      try {
+        // fetch users
+        const res = await fetch("/api/users");
+        const data = await res.json();
 
-      // fetch ALL tasks
-      const tasksRes = await fetch("/api/tasks");
-      const allTasks = tasksRes.ok ? await tasksRes.json() : [];
+        // fetch ALL tasks
+        const tasksRes = await fetch("/api/tasks");
+        const allTasks = tasksRes.ok ? await tasksRes.json() : [];
 
-      if (res.ok && data.value) {
-        const validUsers = data.value.filter(
-          (u) =>
-            u.jobTitle &&
-            u.jobTitle.trim() !== "" &&
-            !u.jobTitle.toLowerCase().includes("chief")
-        );
+        if (res.ok && data.value) {
+          const validUsers = data.value.filter(
+            (u) =>
+              u.jobTitle &&
+              u.jobTitle.trim() !== "" &&
+              !u.jobTitle.toLowerCase().includes("chief")
+          );
 
-        const statsByKey = {};
-        const bump = (key, isCompleted) => {
-          const k = (key || "unassigned").toString().trim().toLowerCase();
-          if (!statsByKey[k]) statsByKey[k] = { total: 0, completed: 0 };
-          statsByKey[k].total += 1;
-          if (isCompleted) statsByKey[k].completed += 1;
-        };
-
-        (allTasks || []).forEach((task) => {
-          const isCompleted = task.status === "completed";
-          let assigned = [];
-          if (Array.isArray(task.assignedTo)) assigned = task.assignedTo;
-          else if (typeof task.assignedTo === "string" && task.assignedTo.trim() !== "")
-            assigned = [task.assignedTo];
-          else assigned = ["unassigned"];
-
-          assigned.forEach((who) => bump(who, isCompleted));
-        });
-
-        const usersWithTasks = validUsers.map((u) => {
-          const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-          const nameKey = (u.displayName || "").toLowerCase();
-
-          const stat = statsByKey[emailKey] || statsByKey[nameKey] || { total: 0, completed: 0 };
-          const completed = stat.completed || 0;
-          const total = stat.total || 0;
-          const percentage = total > 0 ? (completed / total) * 100 : 0;
-
-          return {
-            id: u.id,
-            name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
-            email: u.mail || u.userPrincipalName || null,
-            completed,
-            total,
-            percentage,
-            photo: u.photo,
-            jobTitle: u.jobTitle,
-            hasLicense: Array.isArray(u.assignedLicenses) && u.assignedLicenses.length > 0,
+          const statsByKey = {};
+          const bump = (key, isCompleted) => {
+            const k = (key || "unassigned").toString().trim().toLowerCase();
+            if (!statsByKey[k]) statsByKey[k] = { total: 0, completed: 0 };
+            statsByKey[k].total += 1;
+            if (isCompleted) statsByKey[k].completed += 1;
           };
-        });
 
-        setUsers(usersWithTasks);
+          (allTasks || []).forEach((task) => {
+            const isCompleted = task.status === "completed";
+            let assigned = [];
+            if (Array.isArray(task.assignedTo)) assigned = task.assignedTo;
+            else if (
+              typeof task.assignedTo === "string" &&
+              task.assignedTo.trim() !== ""
+            )
+              assigned = [task.assignedTo];
+            else assigned = ["unassigned"];
+
+            assigned.forEach((who) => bump(who, isCompleted));
+          });
+
+          const usersWithTasks = validUsers.map((u) => {
+            const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+            const nameKey = (u.displayName || "").toLowerCase();
+
+            const stat =
+              statsByKey[emailKey] ||
+              statsByKey[nameKey] || { total: 0, completed: 0 };
+            const completed = stat.completed || 0;
+            const total = stat.total || 0;
+            const percentage = total > 0 ? (completed / total) * 100 : 0;
+
+            return {
+              id: u.id,
+              name:
+                u.displayName || u.mail || u.userPrincipalName || "Unknown",
+              email: u.mail || u.userPrincipalName || null,
+              completed,
+              total,
+              percentage,
+              photo: u.photo,
+              jobTitle: u.jobTitle,
+              hasLicense:
+                Array.isArray(u.assignedLicenses) &&
+                u.assignedLicenses.length > 0,
+            };
+          });
+
+          setUsers(usersWithTasks);
+        }
+      } catch (err) {
+        console.error("Failed to fetch users", err);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch users", err);
-    } finally {
-      setLoading(false);
     }
-  }
 
-  fetchUsersAndTasks();
-}, [refreshKey]);
+    fetchUsersAndTasks();
+  }, [refreshKey]);
 
+  // fetch today's attendance/tardiness from Graph sign-ins
+  useEffect(() => {
+    async function fetchDailyStats() {
+      try {
+        const resUsers = await fetch("/api/users");
+        const dataUsers = await resUsers.json();
+        const totalUsers = (dataUsers.value || []).length;
 
-  // Sort employees by completion percentage
-  const sortedEmployees = [...users].sort((a, b) => b.percentage - a.percentage);
+        const resLogins = await fetch("/api/logins/today");
+        const logins = resLogins.ok ? await resLogins.json() : [];
+
+        // check login times
+        const present = logins.filter((l) => {
+          const t = new Date(l.loginTime);
+          return (
+            t.getHours() < 8 ||
+            (t.getHours() === 8 && t.getMinutes() <= 30)
+          );
+        }).length;
+
+        const tardy = logins.filter((l) => {
+          const t = new Date(l.loginTime);
+          return t.getHours() === 8 && t.getMinutes() > 30;
+        }).length;
+
+        setDailyStats({
+          attendance: totalUsers > 0 ? (present / totalUsers) * 100 : 0,
+          tardiness: totalUsers > 0 ? (tardy / totalUsers) * 100 : 0,
+        });
+      } catch (err) {
+        console.error("Failed to fetch daily stats", err);
+      }
+    }
+
+    fetchDailyStats();
+  }, []);
+
+  // sort employees by completion percentage
+  const sortedEmployees = [...users].sort(
+    (a, b) => b.percentage - a.percentage
+  );
   const top3 = sortedEmployees.slice(0, 3);
   const others = sortedEmployees.slice(3);
+
+  // dynamic pie data
+  const pieData = [
+    { name: "Attendance", value: Math.round(dailyStats.attendance) },
+    { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
+    { name: "Adherence", value: 92 }, // placeholder
+    { name: "Disciplinary Action", value: 88 }, // placeholder
+    { name: "On-Time Completion", value: 91 }, // placeholder
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
 
       <div className="max-w-[90%] mx-auto p-6 space-y-10">
-
         {/* Daily Average */}
         <div className="bg-white shadow rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-6">
@@ -231,11 +280,10 @@ export default function OverviewPage() {
                   Tasks per Employee
                 </h3>
                 <div className="w-full h-150 overflow-y-auto">
-                  {/* allow scroll if too many users */}
                   <ResponsiveContainer width="100%" height={users.length * 40}>
                     <BarChart
                       data={users}
-                      layout="vertical" // horizontal bars
+                      layout="vertical"
                       margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
                     >
                       <XAxis type="number" domain={[0, 100]} />
@@ -244,16 +292,18 @@ export default function OverviewPage() {
                         type="category"
                         width={120}
                         tick={{ fontSize: 12 }}
-                        interval={0}   // force all labels to show
+                        interval={0}
                       />
                       <Tooltip />
-                      {/* Use percentage-based bars */}
-                      <Bar dataKey="percentage" fill="#1E3A8A" radius={[0, 6, 6, 0]} />
+                      <Bar
+                        dataKey="percentage"
+                        fill="#1E3A8A"
+                        radius={[0, 6, 6, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
-
             </div>
           )}
         </div>

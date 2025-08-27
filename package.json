@@ -9,9 +9,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@azure/identity": "^4.11.1",
     "@headlessui/react": "^2.2.7",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "dayjs": "^1.11.13",
     "headlessui": "^0.0.0",
+    "isomorphic-fetch": "^3.0.0",
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.539.0",
     "mongodb": "^6.18.0",
