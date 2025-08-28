@@ -7,9 +7,7 @@ import { authOptions } from "@/lib/authOptions";
 const ATTENDANCE_CUTOFF = process.env.ATTENDANCE_CUTOFF ?? "08:30"; // HH:mm (24h), local org time
 const MAX_USERS = 999; // guardrail for /users page size
 
-/**
- * Helpers
- */
+
 function isoStartOfToday(tz = undefined) {
   const now = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date();
   now.setHours(0, 0, 0, 0);
@@ -38,9 +36,13 @@ async function gFetch(token, path, init = {}) {
     }
   );
   let body = null;
-  try { body = await res.json(); } catch {}
+  try {
+    body = await res.json();
+  } catch {}
   if (!res.ok) {
-    const err = new Error((body && (body.error?.message || body.message)) || `Graph ${res.status}`);
+    const err = new Error(
+      (body && (body.error?.message || body.message)) || `Graph ${res.status}`
+    );
     err.status = res.status;
     err.body = body;
     throw err;
@@ -51,26 +53,34 @@ async function gFetch(token, path, init = {}) {
 /**
  * Compute attendance from sign-ins (premium)
  */
-async function computeFromSignIns(token, cutoffISO) {
+async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
   const usersResp = await gFetch(
     token,
-    `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle&$top=${MAX_USERS}`
+    `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle,assignedLicenses&$top=${MAX_USERS}`
   );
-  const users = usersResp.value || [];
+  let users = usersResp.value || [];
 
+  // ✅ Apply filtering: licensed, enabled, non-chief
+  users = users
+    .filter((u) => u.accountEnabled !== false)
+    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0) // must have license
+    .filter((u) => u.jobTitle && !u.jobTitle.toLowerCase().includes("chief"));
 
-  const enabledUsers = users
-    .filter(u => u.accountEnabled !== false)
-    .filter(u => !u.assignedLicenses?.length)
-    .filter(u => u.jobTitle && !u.jobTitle.toLowerCase().includes("chief"));
+  // Restrict to allowed IDs if provided
+  if (Array.isArray(allowedIds) && allowedIds.length > 0) {
+    const allowedSet = new Set(allowedIds);
+    users = users.filter((u) => allowedSet.has(u.id));
+  }
 
   const startOfDayISO = isoStartOfToday();
   const signIns = [];
   let url = `/auditLogs/signIns?$filter=createdDateTime ge ${startOfDayISO}`;
   for (let i = 0; i < 10 && url; i++) {
     const page = await gFetch(token, url);
-    (page.value || []).forEach(si => signIns.push(si));
-    url = page["@odata.nextLink"] ? page["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "") : null;
+    (page.value || []).forEach((si) => signIns.push(si));
+    url = page["@odata.nextLink"]
+      ? page["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "")
+      : null;
   }
 
   const firstByUserId = new Map();
@@ -87,7 +97,7 @@ async function computeFromSignIns(token, cutoffISO) {
   let onTime = 0;
   const attendanceDetails = [];
 
-  for (const u of enabledUsers) {
+  for (const u of users) {
     const si = firstByUserId.get(u.id);
     if (si) {
       present += 1;
@@ -101,6 +111,7 @@ async function computeFromSignIns(token, cutoffISO) {
         email: u.mail || u.userPrincipalName,
         firstLogin: firstLoginISO,
         onTime: wasOnTime,
+        status: wasOnTime ? "present" : "tardy",
       });
     } else {
       attendanceDetails.push({
@@ -109,11 +120,12 @@ async function computeFromSignIns(token, cutoffISO) {
         email: u.mail || u.userPrincipalName,
         firstLogin: null,
         onTime: false,
+        status: "absent"
       });
     }
   }
 
-  const total = enabledUsers.length || 0;
+  const total = users.length || 0;
   return {
     source: "auditLogs.signIns",
     supportsTardiness: true,
@@ -130,16 +142,23 @@ async function computeFromSignIns(token, cutoffISO) {
 /**
  * Compute attendance from presence snapshot (fallback)
  */
-async function computeFromPresenceSnapshot(token) {
+async function computeFromPresenceSnapshot(token, allowedIds = null) {
   const usersResp = await gFetch(
     token,
-    `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle&$top=${MAX_USERS}`
+    `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle,assignedLicenses&$top=${MAX_USERS}`
   );
-  const users = (usersResp.value || [])
-    .filter(u => u.accountEnabled !== false)
-    .filter(u => u.jobTitle && !u.assignedLicenses?.length && !u.jobTitle.toLowerCase().includes("chief"));
+  let users = (usersResp.value || [])
+    .filter((u) => u.accountEnabled !== false)
+    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0) // ✅ must have license
+    .filter((u) => u.jobTitle && !u.jobTitle.toLowerCase().includes("chief"));
 
-  const ids = users.map(u => u.id);
+  // Restrict to allowed IDs if provided
+  if (Array.isArray(allowedIds) && allowedIds.length > 0) {
+    const allowedSet = new Set(allowedIds);
+    users = users.filter((u) => allowedSet.has(u.id));
+  }
+
+  const ids = users.map((u) => u.id);
   const chunks = [];
   for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
 
@@ -151,7 +170,7 @@ async function computeFromPresenceSnapshot(token) {
         method: "POST",
         body: JSON.stringify(body),
       });
-      (p.value || []).forEach(x => presences.push(x));
+      (p.value || []).forEach((x) => presences.push(x));
     } catch (e) {
       if (e?.status === 403) {
         return {
@@ -164,7 +183,8 @@ async function computeFromPresenceSnapshot(token) {
           onTime: 0,
           tardy: 0,
           details: [],
-          warning: "Missing Presence.Read.All or no Teams license; cannot read presence.",
+          warning:
+            "Missing Presence.Read.All or no Teams license; cannot read presence.",
         };
       }
       throw e;
@@ -173,18 +193,23 @@ async function computeFromPresenceSnapshot(token) {
 
   const presentNowIds = new Set(
     presences
-      .filter(p => p && p.availability && !["offline", "away"].includes(String(p.availability).toLowerCase()))
-      .map(p => p.id)
+      .filter(
+        (p) =>
+          p &&
+          p.availability &&
+          !["offline", "away"].includes(String(p.availability).toLowerCase())
+      )
+      .map((p) => p.id)
   );
 
-  const details = users.map(u => ({
+  const details = users.map((u) => ({
     userId: u.id,
     name: u.displayName || u.userPrincipalName || u.mail,
     email: u.mail || u.userPrincipalName,
     presentNow: presentNowIds.has(u.id),
   }));
 
-  const present = details.filter(d => d.presentNow).length;
+  const present = details.filter((d) => d.presentNow).length;
   const total = users.length;
 
   return {
@@ -203,7 +228,7 @@ async function computeFromPresenceSnapshot(token) {
 }
 
 /**
- * Route handler
+ * Route handlers
  */
 export async function GET() {
   try {
@@ -220,13 +245,11 @@ export async function GET() {
       return NextResponse.json(fromSignIns);
     } catch (e) {
       const code =
-        e?.body?.error?.code ||
-        e?.body?.code ||
-        e?.code ||
-        "";
+        e?.body?.error?.code || e?.body?.code || e?.code || "";
 
       const premiumLike =
-        code === "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
+        code ===
+          "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
         code === "Authentication_MSGraphPermissionMissing" ||
         e?.status === 403;
 
@@ -238,7 +261,57 @@ export async function GET() {
   } catch (err) {
     console.error("presence route error:", err);
     return NextResponse.json(
-      { error: "Failed to compute attendance", detail: err?.message || String(err) },
+      {
+        error: "Failed to compute attendance",
+        detail: err?.message || String(err),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req) {
+  try {
+    const session = await getServerSession(authOptions);
+    const token = session?.accessToken;
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const allowedIds = Array.isArray(body.ids) ? body.ids : [];
+
+    const cutoffISO = parseCutoffToTodayISO(ATTENDANCE_CUTOFF);
+
+    try {
+      const fromSignIns = await computeFromSignIns(
+        token,
+        cutoffISO,
+        allowedIds
+      );
+      return NextResponse.json(fromSignIns);
+    } catch (e) {
+      const code =
+        e?.body?.error?.code || e?.body?.code || e?.code || "";
+
+      const premiumLike =
+        code ===
+          "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
+        code === "Authentication_MSGraphPermissionMissing" ||
+        e?.status === 403;
+
+      if (!premiumLike) throw e;
+
+      const snapshot = await computeFromPresenceSnapshot(token, allowedIds);
+      return NextResponse.json(snapshot);
+    }
+  } catch (err) {
+    console.error("presence POST route error:", err);
+    return NextResponse.json(
+      {
+        error: "Failed to compute attendance",
+        detail: err?.message || String(err),
+      },
       { status: 500 }
     );
   }
