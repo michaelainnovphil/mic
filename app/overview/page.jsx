@@ -27,7 +27,8 @@ export default function OverviewPage() {
   });
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showTardinessModal, setShowTardinessModal] = useState(false);
-
+  const [showOnTimeModal, setShowOnTimeModal] = useState(false);
+  const [onTimeCompletion, setOnTimeCompletion] = useState(0); 
 
   // fetch users and tasks (monthly stats)
   useEffect(() => {
@@ -97,6 +98,22 @@ export default function OverviewPage() {
           });
 
           setUsers(usersWithTasks);
+
+          // ✅ Compute overall completion %
+          const totalCompleted = usersWithTasks.reduce(
+            (sum, u) => sum + u.completed,
+            0
+          );
+          const totalTasks = usersWithTasks.reduce(
+            (sum, u) => sum + u.total,
+            0
+          );
+          const overallCompletion =
+            totalTasks > 0
+              ? Math.round((totalCompleted / totalTasks) * 100)
+              : 0;
+
+          setOnTimeCompletion(overallCompletion);
         }
       } catch (err) {
         console.error("Failed to fetch users", err);
@@ -109,14 +126,13 @@ export default function OverviewPage() {
   }, [refreshKey]);
 
   // fetch today's attendance/tardiness
-    useEffect(() => {
+  useEffect(() => {
     async function fetchDailyStats() {
       try {
         const res = await fetch("/api/presence");
         const data = await res.json();
 
         if (res.ok && data) {
-          
           const grouped = {
             present: [],
             tardy: [],
@@ -133,14 +149,15 @@ export default function OverviewPage() {
             } else if (state === "absent") {
               grouped.absent.push(u);
             } else {
-              // if API returns something unexpected, default to absent
               grouped.absent.push(u);
             }
           });
 
           setDailyStats({
             attendance: Math.round(data.percent || 0),
-            tardiness: Math.round(((data.tardy || 0) / (data.present || 1)) * 100),
+            tardiness: Math.round(
+              ((data.tardy || 0) / (data.present || 1)) * 100
+            ),
             details: grouped,
           });
         } else {
@@ -154,7 +171,6 @@ export default function OverviewPage() {
     fetchDailyStats();
   }, []);
 
-
   const sortedEmployees = [...users].sort(
     (a, b) => b.percentage - a.percentage
   );
@@ -166,7 +182,7 @@ export default function OverviewPage() {
     { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
     { name: "Adherence", value: 92 },
     { name: "Disciplinary Action", value: 88 },
-    { name: "On-Time Completion", value: 91 },
+    { name: "On-Time Completion", value: onTimeCompletion }, 
   ];
 
   return (
@@ -187,6 +203,7 @@ export default function OverviewPage() {
                 onClick={() => {
                   if (item.name === "Attendance") setShowAttendanceModal(true);
                   if (item.name === "Tardiness") setShowTardinessModal(true);
+                  if (item.name === "On-Time Completion") setShowOnTimeModal(true);
                 }}
 
               >
@@ -321,6 +338,49 @@ export default function OverviewPage() {
             </Dialog.Panel>
           </div>
         </Dialog>
+
+        {/* On-Time Completion Modal */}
+        <Dialog
+          open={showOnTimeModal}
+          onClose={() => setShowOnTimeModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-3xl rounded-2xl bg-white p-6 shadow-xl w-full">
+              <Dialog.Title className="text-lg font-semibold">
+                On-Time Completion Details
+              </Dialog.Title>
+              <p className="mt-2 text-sm text-gray-600">
+                {onTimeCompletion}% of tasks completed on time
+              </p>
+
+              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
+                <ul className="space-y-1">
+                  {users.map((u) => (
+                    <li
+                      key={u.id}
+                      className="flex justify-between text-sm p-2 rounded bg-gray-100"
+                    >
+                      <span>{u.name}</span>
+                      <span className="italic">{Math.round(u.percentage)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowOnTimeModal(false)}
+                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+                >
+                  Close
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+
 
 
         {/* Monthly Average */}
