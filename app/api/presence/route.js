@@ -7,7 +7,6 @@ import { authOptions } from "@/lib/authOptions";
 const ATTENDANCE_CUTOFF = process.env.ATTENDANCE_CUTOFF ?? "08:30"; // HH:mm (24h), local org time
 const MAX_USERS = 999; // guardrail for /users page size
 
-
 function isoStartOfToday(tz = undefined) {
   const now = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date();
   now.setHours(0, 0, 0, 0);
@@ -60,13 +59,12 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
   );
   let users = usersResp.value || [];
 
-  // ✅ Apply filtering: licensed, enabled, non-chief
+  // ✅ licensed, enabled, not chief
   users = users
     .filter((u) => u.accountEnabled !== false)
-    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0) // must have license
+    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0)
     .filter((u) => u.jobTitle && !u.jobTitle.toLowerCase().includes("chief"));
 
-  // Restrict to allowed IDs if provided
   if (Array.isArray(allowedIds) && allowedIds.length > 0) {
     const allowedSet = new Set(allowedIds);
     users = users.filter((u) => allowedSet.has(u.id));
@@ -120,7 +118,7 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
         email: u.mail || u.userPrincipalName,
         firstLogin: null,
         onTime: false,
-        status: "absent"
+        status: "absent",
       });
     }
   }
@@ -149,10 +147,9 @@ async function computeFromPresenceSnapshot(token, allowedIds = null) {
   );
   let users = (usersResp.value || [])
     .filter((u) => u.accountEnabled !== false)
-    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0) // ✅ must have license
+    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0)
     .filter((u) => u.jobTitle && !u.jobTitle.toLowerCase().includes("chief"));
 
-  // Restrict to allowed IDs if provided
   if (Array.isArray(allowedIds) && allowedIds.length > 0) {
     const allowedSet = new Set(allowedIds);
     users = users.filter((u) => allowedSet.has(u.id));
@@ -202,12 +199,16 @@ async function computeFromPresenceSnapshot(token, allowedIds = null) {
       .map((p) => p.id)
   );
 
-  const details = users.map((u) => ({
-    userId: u.id,
-    name: u.displayName || u.userPrincipalName || u.mail,
-    email: u.mail || u.userPrincipalName,
-    presentNow: presentNowIds.has(u.id),
-  }));
+  const details = users.map((u) => {
+    const isPresent = presentNowIds.has(u.id);
+    return {
+      userId: u.id,
+      name: u.displayName || u.userPrincipalName || u.mail,
+      email: u.mail || u.userPrincipalName,
+      presentNow: isPresent,
+      status: isPresent ? "present" : "absent", // ✅ unified field
+    };
+  });
 
   const present = details.filter((d) => d.presentNow).length;
   const total = users.length;
@@ -244,12 +245,9 @@ export async function GET() {
       const fromSignIns = await computeFromSignIns(token, cutoffISO);
       return NextResponse.json(fromSignIns);
     } catch (e) {
-      const code =
-        e?.body?.error?.code || e?.body?.code || e?.code || "";
-
+      const code = e?.body?.error?.code || e?.body?.code || e?.code || "";
       const premiumLike =
-        code ===
-          "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
+        code === "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
         code === "Authentication_MSGraphPermissionMissing" ||
         e?.status === 403;
 
@@ -261,10 +259,7 @@ export async function GET() {
   } catch (err) {
     console.error("presence route error:", err);
     return NextResponse.json(
-      {
-        error: "Failed to compute attendance",
-        detail: err?.message || String(err),
-      },
+      { error: "Failed to compute attendance", detail: err?.message || String(err) },
       { status: 500 }
     );
   }
@@ -284,19 +279,12 @@ export async function POST(req) {
     const cutoffISO = parseCutoffToTodayISO(ATTENDANCE_CUTOFF);
 
     try {
-      const fromSignIns = await computeFromSignIns(
-        token,
-        cutoffISO,
-        allowedIds
-      );
+      const fromSignIns = await computeFromSignIns(token, cutoffISO, allowedIds);
       return NextResponse.json(fromSignIns);
     } catch (e) {
-      const code =
-        e?.body?.error?.code || e?.body?.code || e?.code || "";
-
+      const code = e?.body?.error?.code || e?.body?.code || e?.code || "";
       const premiumLike =
-        code ===
-          "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
+        code === "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
         code === "Authentication_MSGraphPermissionMissing" ||
         e?.status === 403;
 
@@ -308,10 +296,7 @@ export async function POST(req) {
   } catch (err) {
     console.error("presence POST route error:", err);
     return NextResponse.json(
-      {
-        error: "Failed to compute attendance",
-        detail: err?.message || String(err),
-      },
+      { error: "Failed to compute attendance", detail: err?.message || String(err) },
       { status: 500 }
     );
   }

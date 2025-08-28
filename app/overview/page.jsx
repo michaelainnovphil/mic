@@ -23,7 +23,7 @@ export default function OverviewPage() {
   const [dailyStats, setDailyStats] = useState({
     attendance: 0,
     tardiness: 0,
-    details: [],
+    details: { present: [], tardy: [], absent: [] },
   });
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
 
@@ -41,7 +41,6 @@ export default function OverviewPage() {
           const validUsers = data.value.filter(
             (u) =>
               u.jobTitle &&
-              
               u.jobTitle.trim() !== "" &&
               !u.jobTitle.toLowerCase().includes("chief")
           );
@@ -107,32 +106,39 @@ export default function OverviewPage() {
     fetchUsersAndTasks();
   }, [refreshKey]);
 
-  // fetch today's attendance/tardiness from Graph
-  useEffect(() => {
+  // fetch today's attendance/tardiness
+    useEffect(() => {
     async function fetchDailyStats() {
       try {
         const res = await fetch("/api/presence");
         const data = await res.json();
 
         if (res.ok && data) {
-          // group users by presence for details modal
+          
           const grouped = {
-            available: [],
-            away: [],
-            busy: [],
-            offline: [],
-            unknown: [],
+            present: [],
+            tardy: [],
+            absent: [],
           };
 
           (data.details || []).forEach((u) => {
-            const state = (u.status || "unknown").toLowerCase();
-            if (grouped[state]) grouped[state].push(u);
-            else grouped.unknown.push(u);
+            const state = (u.status || "absent").toLowerCase();
+
+            if (state === "present") {
+              grouped.present.push(u);
+            } else if (state === "tardy") {
+              grouped.tardy.push(u);
+            } else if (state === "absent") {
+              grouped.absent.push(u);
+            } else {
+              // if API returns something unexpected, default to absent
+              grouped.absent.push(u);
+            }
           });
 
           setDailyStats({
             attendance: Math.round(data.percent || 0),
-            tardiness: Math.round(data.tardyPercent || 0),
+            tardiness: Math.round(((data.tardy || 0) / (data.present || 1)) * 100),
             details: grouped,
           });
         } else {
@@ -145,6 +151,7 @@ export default function OverviewPage() {
 
     fetchDailyStats();
   }, []);
+
 
   const sortedEmployees = [...users].sort(
     (a, b) => b.percentage - a.percentage
@@ -215,7 +222,7 @@ export default function OverviewPage() {
         >
           <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <Dialog.Panel className="mx-auto max-w-2xl rounded-2xl bg-white p-6 shadow-xl w-full">
               <Dialog.Title className="text-lg font-semibold">
                 Attendance Details
               </Dialog.Title>
