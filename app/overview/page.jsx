@@ -41,6 +41,7 @@ export default function OverviewPage() {
           const validUsers = data.value.filter(
             (u) =>
               u.jobTitle &&
+              
               u.jobTitle.trim() !== "" &&
               !u.jobTitle.toLowerCase().includes("chief")
           );
@@ -114,10 +115,25 @@ export default function OverviewPage() {
         const data = await res.json();
 
         if (res.ok && data) {
+          // group users by presence for details modal
+          const grouped = {
+            available: [],
+            away: [],
+            busy: [],
+            offline: [],
+            unknown: [],
+          };
+
+          (data.details || []).forEach((u) => {
+            const state = (u.status || "unknown").toLowerCase();
+            if (grouped[state]) grouped[state].push(u);
+            else grouped.unknown.push(u);
+          });
+
           setDailyStats({
             attendance: Math.round(data.percent || 0),
             tardiness: Math.round(data.tardyPercent || 0),
-            details: data.details || [],
+            details: grouped,
           });
         } else {
           console.error("Failed to fetch presence stats", data);
@@ -207,27 +223,28 @@ export default function OverviewPage() {
                 {dailyStats.attendance}% present, {dailyStats.tardiness}% tardy.
               </p>
 
-              <ul className="mt-4 space-y-2 text-sm max-h-64 overflow-y-auto">
-                {dailyStats.details.length > 0 ? (
-                  dailyStats.details.map((user) => (
-                    <li
-                      key={user.userId}
-                      className={`flex justify-between p-2 rounded ${
-                        user.status === "absent"
-                          ? "bg-red-100 text-red-700"
-                          : user.status === "tardy"
-                          ? "bg-yellow-100 text-yellow-700"
-                          : "bg-green-100 text-green-700"
-                      }`}
-                    >
-                      <span>{user.name}</span>
-                      <span className="italic">{user.status}</span>
-                    </li>
-                  ))
-                ) : (
-                  <p className="text-gray-500">No attendance records.</p>
+              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
+                {Object.entries(dailyStats.details).map(([status, members]) =>
+                  members.length > 0 ? (
+                    <div key={status}>
+                      <h4 className="capitalize font-medium text-gray-700 mb-1">
+                        {status} ({members.length})
+                      </h4>
+                      <ul className="space-y-1">
+                        {members.map((u) => (
+                          <li
+                            key={u.userId}
+                            className="flex justify-between text-sm p-2 rounded bg-gray-100"
+                          >
+                            <span>{u.name}</span>
+                            <span className="italic">{u.status}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null
                 )}
-              </ul>
+              </div>
 
               <div className="mt-4 flex justify-end">
                 <button

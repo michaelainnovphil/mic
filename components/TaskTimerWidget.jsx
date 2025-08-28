@@ -1,4 +1,3 @@
-// components/TaskTimerWidget.jsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -40,7 +39,7 @@ export default function TaskTimerWidget() {
       const elapsed = Math.floor((Date.now() - shiftStartRef.current) / 1000);
       const remaining = Math.max(9 * 60 * 60 - elapsed, 0);
       setTimeLeft(remaining);
-      if (remaining === 0) stopShift(); // auto-stop at end of shift
+      if (remaining === 0) stopShift();
     }, 1000);
   };
 
@@ -56,24 +55,47 @@ export default function TaskTimerWidget() {
     const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
 
     logsRef.current.forEach((log) => {
-  wsData.push([
-    formattedDate,
-    log.task || "",
-    log.description || "",
-    log.taskType || "",
-    formatTime(log.durationSeconds || 0), 
-  ]);
-});
-
+      wsData.push([
+        formattedDate,
+        log.task || "",
+        log.description || "",
+        log.taskType || "",
+        formatTime(log.durationSeconds || 0),
+      ]);
+    });
 
     const worksheet = XLSX.utils.aoa_to_sheet(wsData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
-
     XLSX.writeFile(workbook, "task_logs.xlsx");
   };
 
- 
+  const uploadLogsToDatabase = async () => {
+    if (!logsRef.current || logsRef.current.length === 0) return;
+
+    for (const logEntry of logsRef.current) {
+      try {
+        await fetch("/api/task-log", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user: logEntry.email || "unknown", // fixed
+            task: logEntry.task || "Untitled Task",
+            duration: isNaN(logEntry.durationSeconds) ? 0 : logEntry.durationSeconds,
+            taskType: logEntry.taskType || "",
+            description: logEntry.description || "",
+            timestamp: logEntry.timestamp ? new Date(logEntry.timestamp) : new Date(),
+            taskId: logEntry.taskId || null,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to save log to DB:", err);
+      }
+    }
+
+    logsRef.current = [];
+  };
+
   const handleStopTask = async () => {
     if (!prevTaskRef.current) return;
 
@@ -83,29 +105,29 @@ export default function TaskTimerWidget() {
     );
 
     const logEntry = {
-  task: prevTaskRef.current.title,
-  taskType: prevTaskRef.current.type || "",
-  description: prevTaskRef.current.description || "",
-  durationSeconds, 
-  email: prevTaskRef.current.assignedTo || "unknown",
-  taskId: prevTaskRef.current.id,
-  timestamp: new Date().toISOString(),
-};
+      task: prevTaskRef.current.title,
+      taskType: prevTaskRef.current.type || "",
+      description: prevTaskRef.current.description || "",
+      durationSeconds,
+      email: prevTaskRef.current.assignedTo || "unknown",
+      taskId: prevTaskRef.current.id,
+      timestamp: new Date().toISOString(),
+    };
 
-
-    // store locally for Excel export
     logsRef.current.push(logEntry);
 
-    // send to backend
     try {
       await fetch("/api/task-log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: logEntry.email,
-          taskId: logEntry.taskId,
-          duration: durationSeconds,
-          timestamp: logEntry.timestamp,
+          user: logEntry.email || "unknown",       // backend expects 'user'
+          task: logEntry.task || "Untitled Task",
+          duration: logEntry.durationSeconds || 0, // backend expects 'duration'
+          taskType: logEntry.taskType || "",
+          description: logEntry.description || "",
+          timestamp: logEntry.timestamp ? new Date(logEntry.timestamp) : new Date(),
+          taskId: logEntry.taskId || null,
         }),
       });
     } catch (err) {
@@ -115,8 +137,9 @@ export default function TaskTimerWidget() {
     prevTaskRef.current = null;
   };
 
-  const stopShift = () => {
-    handleStopTask();
+  const stopShift = async () => {
+    await handleStopTask();
+    await uploadLogsToDatabase();
     clearInterval(intervalRef.current);
     shiftStartRef.current = null;
     localStorage.removeItem("shiftStartAt");
