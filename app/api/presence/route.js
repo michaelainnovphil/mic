@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 
 // Config
-const ATTENDANCE_CUTOFF = process.env.ATTENDANCE_CUTOFF ?? "08:30"; // HH:mm (24h), local org time
+const ATTENDANCE_CUTOFF = process.env.ATTENDANCE_CUTOFF ?? "08:00"; // HH:mm (24h), local org time
 const MAX_USERS = 999; // guardrail for /users page size
 
 function isoStartOfToday(tz = undefined) {
@@ -14,7 +14,7 @@ function isoStartOfToday(tz = undefined) {
 }
 
 function parseCutoffToTodayISO(cutoffHHmm, tz = undefined) {
-  const [hh, mm] = (cutoffHHmm || "08:30").split(":").map(Number);
+  const [hh, mm] = (cutoffHHmm || "08:00").split(":").map(Number);
   const base = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date();
   base.setHours(0, 0, 0, 0);
   base.setHours(hh, mm, 0, 0);
@@ -59,7 +59,7 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
   );
   let users = usersResp.value || [];
 
-  // ✅ licensed, enabled, not chief
+
   users = users
     .filter((u) => u.accountEnabled !== false)
     .filter((u) => (u.assignedLicenses?.length ?? 0) > 0)
@@ -206,7 +206,7 @@ async function computeFromPresenceSnapshot(token, allowedIds = null) {
       name: u.displayName || u.userPrincipalName || u.mail,
       email: u.mail || u.userPrincipalName,
       presentNow: isPresent,
-      status: isPresent ? "present" : "absent", // ✅ unified field
+      status: isPresent ? "present" : "absent", 
     };
   });
 

@@ -185,9 +185,9 @@ export default function OverviewPage() {
                 key={item.name}
                 className="flex flex-col items-center cursor-pointer"
                 onClick={() => {
-  if (item.name === "Attendance") setShowAttendanceModal(true);
-  if (item.name === "Tardiness") setShowTardinessModal(true);
-}}
+                  if (item.name === "Attendance") setShowAttendanceModal(true);
+                  if (item.name === "Tardiness") setShowTardinessModal(true);
+                }}
 
               >
                 <div className="relative w-28 h-28">
