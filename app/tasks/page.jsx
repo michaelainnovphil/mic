@@ -25,6 +25,9 @@ function TasksContent() {
   const [priority, setPriority] = useState("Medium");
   const [activeTask, setActiveTask] = useState(null);
 
+  // New state to track if user has an in-progress task
+  const [hasInProgressTask, setHasInProgressTask] = useState(false);
+
   useEffect(() => {
     if (session?.user?.email) fetchTasks();
     console.log("Logged in as:", myEmail);
@@ -32,73 +35,78 @@ function TasksContent() {
   }, [filter, session?.user?.email]);
 
   const fetchTasks = async () => {
-  try {
-    const res = await fetch("/api/tasks");
-    const data = await res.json();
+    try {
+      const res = await fetch("/api/tasks");
+      const data = await res.json();
 
-    // Filter tasks by status
-    const filtered = data.filter((task) => {
-      if (filter === "all") return true;
-      if (filter === "completed") return task.status === "completed";
-      return task.status === "pending" || task.status === "in-progress";
-    });
+      // Filter tasks by status
+      const filtered = data.filter((task) => {
+        if (filter === "all") return true;
+        if (filter === "completed") return task.status === "completed";
+        return task.status === "pending" || task.status === "in-progress";
+      });
 
-    // My tasks: assigned to me (case-insensitive)
-    let mine = filtered.filter(
-      (task) =>
-        Array.isArray(task.assignedTo) &&
-        task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
-    );
+      // Check if user has an in-progress task assigned
+      const inProgressTask = filtered.find(
+        (task) =>
+          task.status === "in-progress" &&
+          Array.isArray(task.assignedTo) &&
+          task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
+      );
+      setHasInProgressTask(!!inProgressTask);
 
-    // Sort my tasks by priority
-    mine.sort((a, b) => {
-      const priorityOrder = { High: 1, Medium: 2, Low: 3 };
-      return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
-    });
+      // My tasks: assigned to me (case-insensitive)
+      let mine = filtered.filter(
+        (task) =>
+          Array.isArray(task.assignedTo) &&
+          task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
+      );
 
-    setTasks(mine);
+      // Sort my tasks by priority
+      mine.sort((a, b) => {
+        const priorityOrder = { High: 1, Medium: 2, Low: 3 };
+        return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+      });
 
-    const unassigned = filtered.filter((task) => {
-  const isUnassigned =
-  !task.assignedTo ||
-  (Array.isArray(task.assignedTo) && (
-    task.assignedTo.length === 0 ||
-    task.assignedTo.some(a => a.toLowerCase() === "unassigned")
-  ));
+      setTasks(mine);
 
+      const unassigned = filtered.filter((task) => {
+        const isUnassigned =
+          !task.assignedTo ||
+          (Array.isArray(task.assignedTo) && (
+            task.assignedTo.length === 0 ||
+            task.assignedTo.some(a => a.toLowerCase() === "unassigned")
+          ));
 
-  if (!isUnassigned) {
-    console.log(`Task ${task._id} skipped: assignedTo is not empty`);
-    return false;
-  }
+        if (!isUnassigned) {
+          console.log(`Task ${task._id} skipped: assignedTo is not empty`);
+          return false;
+        }
 
-  if (!task.createdBy) {
-    console.log(`Task ${task._id} skipped: no createdBy`);
-    return false;
-  }
+        if (!task.createdBy) {
+          console.log(`Task ${task._id} skipped: no createdBy`);
+          return false;
+        }
 
-  const creatorEmail = task.createdBy.toLowerCase();
-  const creatorTeam = TEAM_MAP[creatorEmail] || "Unassigned";
+        const creatorEmail = task.createdBy.toLowerCase();
+        const creatorTeam = TEAM_MAP[creatorEmail] || "Unassigned";
 
-  console.log(`Task ${task._id} creatorTeam: "${creatorTeam}", myTeam: "${myTeam}"`);
+        console.log(`Task ${task._id} creatorTeam: "${creatorTeam}", myTeam: "${myTeam}"`);
 
-  return creatorTeam === myTeam;
-});
+        return creatorTeam === myTeam;
+      });
 
+      // Sort unassigned tasks by priority
+      unassigned.sort((a, b) => {
+        const priorityOrder = { High: 1, Medium: 2, Low: 3 };
+        return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+      });
 
-    // Sort unassigned tasks by priority
-    unassigned.sort((a, b) => {
-      const priorityOrder = { High: 1, Medium: 2, Low: 3 };
-      return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
-    });
-
-    setUnassignedTasks(unassigned);
-  } catch (err) {
-    console.error(err);
-  }
-};
-
-  
+      setUnassignedTasks(unassigned);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleAddTask = async () => {
     if (!title) return alert("Title is required");
@@ -161,7 +169,6 @@ function TasksContent() {
     }
   };
 
-  
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
       <Header />
@@ -286,6 +293,10 @@ function TasksContent() {
                         {task.status === "pending" && (
                           <button
                             onClick={async () => {
+                              if (hasInProgressTask) {
+                                alert("You already have an in-progress task. Please complete it before starting a new one.");
+                                return;
+                              }
                               try {
                                 const res = await fetch(`/api/tasks/${task._id}/status`, {
                                   method: "PUT",
@@ -304,7 +315,12 @@ function TasksContent() {
                                 alert("Error starting task");
                               }
                             }}
-                            className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                            className={`px-3 py-1 rounded ${
+                              hasInProgressTask
+                                ? "bg-gray-400 text-gray-700 cursor-not-allowed"
+                                : "bg-green-500 text-white hover:bg-green-600"
+                            }`}
+                            disabled={hasInProgressTask}
                           >
                             Start
                           </button>
@@ -385,7 +401,6 @@ function TasksContent() {
 }
 
 export default function TasksPage() {
-  
   return (
     <SessionProvider>
       <TasksContent />

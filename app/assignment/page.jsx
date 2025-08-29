@@ -129,7 +129,7 @@ function AssignmentContent() {
     }
   };
 
-  // 🔥 Delete Task
+  //  Delete Task
   const handleDeleteTask = async (id) => {
     if (!confirm("Are you sure you want to delete this task?")) return;
 
@@ -222,26 +222,28 @@ function AssignmentContent() {
               ) : (
                 assignedTasks.map((task) => (
                   <div
-                    key={task._id}
-                    className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
-                  >
+                  key={task._id}
+                  className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
+                >
+                  {/* Header row with title and delete button */}
+                  <div className="flex justify-between items-start">
                     <h3 className="font-bold">{task.title}</h3>
-                    {task.description && <p className="text-sm">{task.description}</p>}
-                    <p className="text-sm text-gray-500">
-                      Priority: {task.priority}
-                    </p>
-                    {task.assignedTo && (
-                      <p className="text-sm">Assigned to: {task.assignedTo}</p>
-                    )}
 
-                    {/* 🔥 Delete button */}
                     <button
                       onClick={() => handleDeleteTask(task._id)}
-                      className="mt-2 bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-2 rounded"
+                      className="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1 rounded"
                     >
                       🗑 Delete
                     </button>
                   </div>
+
+                  {task.description && <p className="text-sm">{task.description}</p>}
+                  <p className="text-sm text-gray-500">Priority: {task.priority}</p>
+                  {task.assignedTo && (
+                    <p className="text-sm">Assigned to: {task.assignedTo}</p>
+                  )}
+                </div>
+
                 ))
               )}
             </div>
