@@ -27,69 +27,78 @@ function TasksContent() {
 
   useEffect(() => {
     if (session?.user?.email) fetchTasks();
+    console.log("Logged in as:", myEmail);
+    console.log("My team:", myTeam);
   }, [filter, session?.user?.email]);
 
   const fetchTasks = async () => {
-    try {
-      const res = await fetch("/api/tasks");
-      const data = await res.json();
+  try {
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
 
-      // Filter tasks by status
-      const filtered = data.filter((task) => {
-        if (filter === "all") return true;
-        if (filter === "completed") return task.status === "completed";
-        return task.status === "pending" || task.status === "in-progress";
-      });
+    // Filter tasks by status
+    const filtered = data.filter((task) => {
+      if (filter === "all") return true;
+      if (filter === "completed") return task.status === "completed";
+      return task.status === "pending" || task.status === "in-progress";
+    });
 
-      const myEmail = session.user.email.toLowerCase();
-
-      // My tasks
-      let mine = filtered.filter(
-        (task) =>
-          Array.isArray(task.assignedTo) &&
-          task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
-      );
-
-      // Sort by priority
-      mine.sort((a, b) => {
-        const priorityOrder = { High: 1, Medium: 2, Low: 3 };
-        return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
-      });
-
-      setTasks(mine);
-
-      // ✅ Unassigned tasks for my team
-const unassigned = filtered.filter((task) => {
-  const isUnassigned =
-    !task.assignedTo ||
-    (Array.isArray(task.assignedTo)
-      ? task.assignedTo.length === 0 || task.assignedTo.every((a) => !a || a === "unassigned")
-      : !task.assignedTo);
-
-  // If task is unassigned → show in my team’s workbasket
-  if (isUnassigned) return true;
-
-  // Otherwise → check if any assigned user belongs to my team
-  if (Array.isArray(task.assignedTo)) {
-    return task.assignedTo.some(
-      (a) => TEAM_MAP[a?.toLowerCase()] === myTeam
+    // My tasks: assigned to me (case-insensitive)
+    let mine = filtered.filter(
+      (task) =>
+        Array.isArray(task.assignedTo) &&
+        task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
     );
+
+    // Sort my tasks by priority
+    mine.sort((a, b) => {
+      const priorityOrder = { High: 1, Medium: 2, Low: 3 };
+      return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+    });
+
+    setTasks(mine);
+
+    const unassigned = filtered.filter((task) => {
+  const isUnassigned =
+  !task.assignedTo ||
+  (Array.isArray(task.assignedTo) && (
+    task.assignedTo.length === 0 ||
+    task.assignedTo.some(a => a.toLowerCase() === "unassigned")
+  ));
+
+
+  if (!isUnassigned) {
+    console.log(`Task ${task._id} skipped: assignedTo is not empty`);
+    return false;
   }
 
-  return TEAM_MAP[task.assignedTo?.toLowerCase()] === myTeam;
+  if (!task.createdBy) {
+    console.log(`Task ${task._id} skipped: no createdBy`);
+    return false;
+  }
+
+  const creatorEmail = task.createdBy.toLowerCase();
+  const creatorTeam = TEAM_MAP[creatorEmail] || "Unassigned";
+
+  console.log(`Task ${task._id} creatorTeam: "${creatorTeam}", myTeam: "${myTeam}"`);
+
+  return creatorTeam === myTeam;
 });
 
 
-      unassigned.sort((a, b) => {
-        const priorityOrder = { High: 1, Medium: 2, Low: 3 };
-        return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
-      });
+    // Sort unassigned tasks by priority
+    unassigned.sort((a, b) => {
+      const priorityOrder = { High: 1, Medium: 2, Low: 3 };
+      return (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4);
+    });
 
-      setUnassignedTasks(unassigned);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    setUnassignedTasks(unassigned);
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+  
 
   const handleAddTask = async () => {
     if (!title) return alert("Title is required");
@@ -99,7 +108,7 @@ const unassigned = filtered.filter((task) => {
       description,
       assignedTo: assignedTo ? [assignedTo] : [],
       priority,
-      team: myTeam, // include team when adding
+      createdBy: session?.user?.email, 
     };
 
     try {
@@ -135,7 +144,6 @@ const unassigned = filtered.filter((task) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           assignedTo: [session.user.email],
-          team: myTeam, // assign to my team
         }),
       });
 
@@ -153,6 +161,7 @@ const unassigned = filtered.filter((task) => {
     }
   };
 
+  
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
       <Header />
@@ -376,6 +385,7 @@ const unassigned = filtered.filter((task) => {
 }
 
 export default function TasksPage() {
+  
   return (
     <SessionProvider>
       <TasksContent />

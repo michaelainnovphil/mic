@@ -24,7 +24,13 @@ function AssignmentContent() {
   useEffect(() => {
     if (status === "loading") return;
 
-    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com"]; 
+    const allowedUsers = [
+      "mdbarreda@innovphil.com",
+      "aarce@innovphil.com",
+      "carce@innovphil.com",
+      "amlinguete@innovphil.com",
+      "mcastilla@innovphil.com",
+    ];
     if (!session || !allowedUsers.includes(session.user.email)) {
       router.replace("/unauthorized");
     }
@@ -48,8 +54,13 @@ function AssignmentContent() {
     const res = await fetch("/api/tasks");
     const data = await res.json();
 
-    
-    const allowedUsers = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com"];
+    const allowedUsers = [
+      "mdbarreda@innovphil.com",
+      "aarce@innovphil.com",
+      "carce@innovphil.com",
+      "amlinguete@innovphil.com",
+      "mcastilla@innovphil.com",
+    ];
     if (allowedUsers.includes(currentUserEmail)) {
       const unassigned = (data || []).filter(
         (task) =>
@@ -58,7 +69,6 @@ function AssignmentContent() {
       );
       setAssignedTasks(unassigned);
     } else {
-      // Non-managers: only see tasks created by their manager
       const managerTasks = (data || []).filter(
         (task) => task.createdBy && task.createdBy !== currentUserEmail
       );
@@ -67,31 +77,28 @@ function AssignmentContent() {
   };
 
   const fetchTeamTasks = async () => {
-  const res = await fetch("/api/tasks");
-  const data = await res.json();
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
 
-  const userStats = {};
+    const userStats = {};
+    (data || []).forEach((task) => {
+      if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
+        task.assignedTo.forEach((user) => {
+          if (!user || user.toLowerCase() === "unassigned") return;
 
-  (data || []).forEach((task) => {
-    if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
-      task.assignedTo.forEach((user) => {
-        // 🚫 Skip "unassigned" and empty values
-        if (!user || user.toLowerCase() === "unassigned") return;
+          if (!userStats[user]) {
+            userStats[user] = { total: 0, completed: 0 };
+          }
+          userStats[user].total += 1;
+          if (task.status === "completed") {
+            userStats[user].completed += 1;
+          }
+        });
+      }
+    });
 
-        if (!userStats[user]) {
-          userStats[user] = { total: 0, completed: 0 };
-        }
-        userStats[user].total += 1;
-        if (task.status === "completed") {
-          userStats[user].completed += 1;
-        }
-      });
-    }
-  });
-
-  setTeamTasks(userStats);
-};
-
+    setTeamTasks(userStats);
+  };
 
   const handleAddTask = async () => {
     if (!title) return alert("Title is required");
@@ -115,10 +122,26 @@ function AssignmentContent() {
       setDescription("");
       setPriority("Medium");
       setAssignedTo("");
-      await fetchAssignedTasks(); // refresh assigned tasks
+      await fetchAssignedTasks();
     } else {
       const data = await res.json();
       alert(data.error || "Failed to add task");
+    }
+  };
+
+  // 🔥 Delete Task
+  const handleDeleteTask = async (id) => {
+    if (!confirm("Are you sure you want to delete this task?")) return;
+
+    const res = await fetch(`/api/tasks/${id}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      await fetchAssignedTasks();
+    } else {
+      const data = await res.json();
+      alert(data.error || "Failed to delete task");
     }
   };
 
@@ -200,7 +223,7 @@ function AssignmentContent() {
                 assignedTasks.map((task) => (
                   <div
                     key={task._id}
-                    className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow"
+                    className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
                   >
                     <h3 className="font-bold">{task.title}</h3>
                     {task.description && <p className="text-sm">{task.description}</p>}
@@ -210,12 +233,21 @@ function AssignmentContent() {
                     {task.assignedTo && (
                       <p className="text-sm">Assigned to: {task.assignedTo}</p>
                     )}
+
+                    {/* 🔥 Delete button */}
+                    <button
+                      onClick={() => handleDeleteTask(task._id)}
+                      className="mt-2 bg-red-600 hover:bg-red-500 text-white text-sm px-4 py-2 rounded"
+                    >
+                      🗑 Delete
+                    </button>
                   </div>
                 ))
               )}
             </div>
           </div>
 
+          {/* Team Overview */}
           <div>
             <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
             <div className="space-y-4">
@@ -235,16 +267,12 @@ function AssignmentContent() {
                       className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
                     >
                       <h3 className="font-bold">{user}</h3>
-
-                      {/* Progress Bar */}
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
                         <div
                           className="bg-blue-600 h-4 transition-all duration-500"
                           style={{ width: `${percent}%` }}
                         ></div>
                       </div>
-
-                      {/* Stats Text */}
                       <p className="text-sm text-gray-500">
                         {stats.completed} / {stats.total} tasks completed ({percent}
                         %)
