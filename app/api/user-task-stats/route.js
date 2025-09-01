@@ -1,7 +1,7 @@
 // app/api/user-task-stats/route.js
 
 import connectToDatabase from "@/lib/mongodb";
-import TaskLog from "@/lib/models/TaskLog"; 
+import TaskLog from "@/lib/models/TaskLog";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,7 @@ export async function GET() {
       {
         $group: {
           _id: "$email",
-          totalDuration: { $sum: "$duration" },
-          logs: { $push: "$$ROOT" },
+          totalDurationSeconds: { $sum: "$durationSeconds" },
         },
       },
     ]);
@@ -23,7 +22,7 @@ export async function GET() {
     const stats = {};
     logs.forEach((entry) => {
       stats[entry._id] = {
-        totalDuration: entry.totalDuration || 0,
+        totalDuration: (entry.totalDurationSeconds || 0) / 3600,
       };
     });
 

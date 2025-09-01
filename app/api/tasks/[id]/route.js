@@ -6,7 +6,10 @@ import { authOptions } from "@/lib/authOptions";
 import Task from "@/lib/models/Task";
 
 // Update task by ID
-export async function PATCH(req, { params }) {
+export async function PATCH(req, context) {
+  const { params } = await context; 
+  const { id } = params;
+
   const session = await getServerSession(authOptions);
   if (!session || !session.user?.email) {
     return new Response("Unauthorized", { status: 401 });
@@ -14,7 +17,6 @@ export async function PATCH(req, { params }) {
 
   await connectToDatabase();
 
-  const { id } = params;
   if (!id) {
     return new Response(JSON.stringify({ error: "Missing task ID" }), {
       status: 400,
@@ -53,8 +55,11 @@ export async function PATCH(req, { params }) {
   });
 }
 
-// ✅ Delete task by ID
-export async function DELETE(req, { params }) {
+// Delete task by ID
+export async function DELETE(req, context) {
+  const { params } = await context; 
+  const { id } = params;
+
   const session = await getServerSession(authOptions);
   if (!session || !session.user?.email) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -65,7 +70,6 @@ export async function DELETE(req, { params }) {
 
   await connectToDatabase();
 
-  const { id } = params;
   if (!id) {
     return new Response(JSON.stringify({ error: "Missing task ID" }), {
       status: 400,

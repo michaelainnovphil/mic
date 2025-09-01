@@ -80,9 +80,9 @@ export default function TaskTimerWidget() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user: logEntry.email || "unknown", // fixed
+            user: logEntry.email || "unknown",
             task: logEntry.task || "Untitled Task",
-            duration: isNaN(logEntry.durationSeconds) ? 0 : logEntry.durationSeconds,
+            duration: logEntry.durationSeconds || 0,
             taskType: logEntry.taskType || "",
             description: logEntry.description || "",
             timestamp: logEntry.timestamp ? new Date(logEntry.timestamp) : new Date(),
@@ -118,13 +118,14 @@ export default function TaskTimerWidget() {
     logsRef.current.push(logEntry);
 
     try {
+      // ✅ Save log + increment task duration in DB
       await fetch("/api/task-log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user: logEntry.email || "unknown",       // backend expects 'user'
+          user: logEntry.email || "unknown",
           task: logEntry.task || "Untitled Task",
-          duration: logEntry.durationSeconds || 0, // backend expects 'duration'
+          duration: logEntry.durationSeconds || 0,
           taskType: logEntry.taskType || "",
           description: logEntry.description || "",
           timestamp: logEntry.timestamp ? new Date(logEntry.timestamp) : new Date(),

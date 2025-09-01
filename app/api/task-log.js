@@ -1,25 +1,34 @@
 // /pages/api/task-log.js
 import { connectToDatabase } from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
 
 export default async function handler(req, res) {
   try {
     const { db } = await connectToDatabase();
     const collection = db.collection("tasklogs");
+    const tasks = db.collection("tasks");
 
     if (req.method === "POST") {
       const log = req.body;
 
       // basic validation
-      if (!log || !log.user || !log.task || !log.duration) {
+      if (!log || !log.user || !log.taskId || log.duration === undefined) {
         return res.status(400).json({ error: "Missing required fields" });
       }
+
 
       // always ensure timestamp
       log.timestamp = log.timestamp ? new Date(log.timestamp) : new Date();
 
       await collection.insertOne(log);
 
-      return res.status(201).json({ success: true, message: "Log saved" });
+      // increment duration on Task
+      await tasks.updateOne(
+        { _id: new ObjectId(log.taskId) },
+        { $inc: { duration: log.duration } }
+      );
+
+      return res.status(201).json({ success: true, message: "Log saved & duration updated" });
     }
 
     if (req.method === "GET") {
