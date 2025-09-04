@@ -1,3 +1,4 @@
+// app/overview/page.jsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,7 +9,9 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import Header from "@/components/Header";
-import { Dialog } from "@headlessui/react";
+import { Dialog, Disclosure } from "@headlessui/react";
+import { ChevronUpIcon } from "lucide-react";
+import { TEAM_MAP } from "@/lib/teamMap";
 
 export default function OverviewPage() {
   const [users, setUsers] = useState([]);
@@ -22,13 +25,13 @@ export default function OverviewPage() {
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showTardinessModal, setShowTardinessModal] = useState(false);
   const [showOnTimeModal, setShowOnTimeModal] = useState(false);
-  const [showDAModal, setShowDAModal] = useState(false); // disciplinary modal
+  const [showDAModal, setShowDAModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
-  const [disciplinaryRecords, setDisciplinaryRecords] = useState({}); // {userId: [actions]}
+  const [disciplinaryRecords, setDisciplinaryRecords] = useState({});
   const [newDA, setNewDA] = useState("");
   const [onTimeCompletion, setOnTimeCompletion] = useState(0);
 
-  // fetch users and tasks (monthly stats)
+  // fetch users and tasks
   useEffect(() => {
     async function fetchUsersAndTasks() {
       try {
@@ -58,10 +61,7 @@ export default function OverviewPage() {
             const isCompleted = task.status === "completed";
             let assigned = [];
             if (Array.isArray(task.assignedTo)) assigned = task.assignedTo;
-            else if (
-              typeof task.assignedTo === "string" &&
-              task.assignedTo.trim() !== ""
-            )
+            else if (typeof task.assignedTo === "string" && task.assignedTo.trim() !== "")
               assigned = [task.assignedTo];
             else assigned = ["unassigned"];
 
@@ -73,16 +73,14 @@ export default function OverviewPage() {
             const nameKey = (u.displayName || "").toLowerCase();
 
             const stat =
-              statsByKey[emailKey] ||
-              statsByKey[nameKey] || { total: 0, completed: 0 };
+              statsByKey[emailKey] || statsByKey[nameKey] || { total: 0, completed: 0 };
             const completed = stat.completed || 0;
             const total = stat.total || 0;
             const percentage = total > 0 ? (completed / total) * 100 : 0;
 
             return {
               id: u.id,
-              name:
-                u.displayName || u.mail || u.userPrincipalName || "Unknown",
+              name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
               email: u.mail || u.userPrincipalName || null,
               completed,
               total,
@@ -90,26 +88,16 @@ export default function OverviewPage() {
               photo: u.photo,
               jobTitle: u.jobTitle,
               hasLicense:
-                Array.isArray(u.assignedLicenses) &&
-                u.assignedLicenses.length > 0,
+                Array.isArray(u.assignedLicenses) && u.assignedLicenses.length > 0,
             };
           });
 
           setUsers(usersWithTasks);
 
-          // ✅ Compute overall completion %
-          const totalCompleted = usersWithTasks.reduce(
-            (sum, u) => sum + u.completed,
-            0
-          );
-          const totalTasks = usersWithTasks.reduce(
-            (sum, u) => sum + u.total,
-            0
-          );
+          const totalCompleted = usersWithTasks.reduce((sum, u) => sum + u.completed, 0);
+          const totalTasks = usersWithTasks.reduce((sum, u) => sum + u.total, 0);
           const overallCompletion =
-            totalTasks > 0
-              ? Math.round((totalCompleted / totalTasks) * 100)
-              : 0;
+            totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
 
           setOnTimeCompletion(overallCompletion);
         }
@@ -123,7 +111,7 @@ export default function OverviewPage() {
     fetchUsersAndTasks();
   }, [refreshKey]);
 
-  // fetch today's attendance/tardiness
+  // fetch daily attendance
   useEffect(() => {
     async function fetchDailyStats() {
       try {
@@ -131,29 +119,17 @@ export default function OverviewPage() {
         const data = await res.json();
 
         if (res.ok && data) {
-          const grouped = {
-            present: [],
-            tardy: [],
-            absent: [],
-          };
-
+          const grouped = { present: [], tardy: [], absent: [] };
           (data.details || []).forEach((u) => {
             const state = (u.status || "absent").toLowerCase();
-
-            if (state === "present") {
-              grouped.present.push(u);
-            } else if (state === "tardy") {
-              grouped.tardy.push(u);
-            } else {
-              grouped.absent.push(u);
-            }
+            if (state === "present") grouped.present.push(u);
+            else if (state === "tardy") grouped.tardy.push(u);
+            else grouped.absent.push(u);
           });
 
           setDailyStats({
             attendance: Math.round(data.percent || 0),
-            tardiness: Math.round(
-              ((data.tardy || 0) / (data.present || 1)) * 100
-            ),
+            tardiness: Math.round(((data.tardy || 0) / (data.present || 1)) * 100),
             details: grouped,
           });
         }
@@ -165,14 +141,14 @@ export default function OverviewPage() {
     fetchDailyStats();
   }, []);
 
-  // ✅ Fetch Disciplinary Actions from DB
+  // fetch disciplinary actions
   useEffect(() => {
     async function fetchDA() {
       try {
         const res = await fetch("/api/disciplinary");
         if (res.ok) {
           const data = await res.json();
-          setDisciplinaryRecords(data); // { userId: [actions] }
+          setDisciplinaryRecords(data);
         }
       } catch (err) {
         console.error("Failed to fetch DA", err);
@@ -181,34 +157,54 @@ export default function OverviewPage() {
     fetchDA();
   }, []);
 
-  // ✅ Compute Disciplinary Action %
+  // compute DA percentage (overall)
   const totalUsers = users.length;
   const usersWithDA = Object.keys(disciplinaryRecords).length;
   const disciplinaryPercent =
     totalUsers > 0 ? Math.round(((totalUsers - usersWithDA) / totalUsers) * 100) : 100;
 
-  const pieData = [
-    { name: "Attendance", value: Math.round(dailyStats.attendance) },
-    { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
-    { name: "Adherence", value: 92 },
-    { name: "Disciplinary Action", value: disciplinaryPercent },
-    { name: "On-Time Completion", value: onTimeCompletion },
-  ];
+  // build pieData (switches based on selectedUser)
+  const buildPieData = () => {
+    if (!selectedUser) {
+      // overall
+      return [
+        { name: "Attendance", value: Math.round(dailyStats.attendance) },
+        { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
+        { name: "Adherence", value: 92 },
+        { name: "Disciplinary Action", value: disciplinaryPercent },
+        { name: "On-Time Completion", value: onTimeCompletion },
+      ];
+    } else {
+      // per user
+      const isPresent = dailyStats.details.present.some((u) => u.userId === selectedUser.id);
+      const isTardy = dailyStats.details.tardy.some((u) => u.userId === selectedUser.id);
+      const attendanceVal = isPresent || isTardy ? 100 : 0;
+      const tardinessVal = isTardy ? 0 : 100;
+      const adherenceVal = 92; // placeholder (could compute real adherence per-user)
+      const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
+      const daVal = hasDA ? 0 : 100;
+      const completionVal = Math.round(selectedUser.percentage);
 
-  // ✅ Persist DA to MongoDB
+      return [
+        { name: "Attendance", value: attendanceVal },
+        { name: "Tardiness", value: tardinessVal },
+        { name: "Adherence", value: adherenceVal },
+        { name: "Disciplinary Action", value: daVal },
+        { name: "On-Time Completion", value: completionVal },
+      ];
+    }
+  };
+
+  const pieData = buildPieData();
+
   const handleAddDA = async () => {
     if (!selectedUser || !newDA.trim()) return;
-
     try {
       const res = await fetch("/api/disciplinary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: selectedUser.id,
-          action: newDA.trim(),
-        }),
+        body: JSON.stringify({ userId: selectedUser.id, action: newDA.trim() }),
       });
-
       if (res.ok) {
         setDisciplinaryRecords((prev) => {
           const existing = prev[selectedUser.id] || [];
@@ -216,23 +212,29 @@ export default function OverviewPage() {
         });
         setNewDA("");
         setShowDAModal(false);
-      } else {
-        console.error("Failed to save DA");
       }
     } catch (err) {
       console.error("Error saving DA", err);
     }
   };
 
+  // group users by department
+  const groupedByDept = {};
+  users.forEach((u) => {
+    const dept = TEAM_MAP[u.email?.toLowerCase()] || "Other";
+    if (!groupedByDept[dept]) groupedByDept[dept] = [];
+    groupedByDept[dept].push(u);
+  });
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
 
       <div className="max-w-[90%] mx-auto p-6 space-y-10">
-        {/* Daily Average */}
+        {/* Daily Averages Pie */}
         <div className="bg-white shadow rounded-2xl p-6">
           <h2 className="text-lg font-semibold mb-6">
-            Daily Average For Naga/Makati
+            {selectedUser ? `${selectedUser.name}'s Stats` : "Daily Average For Naga/Makati"}
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
             {pieData.map((item) => (
@@ -274,91 +276,65 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* ✅ Disciplinary Action Modal */}
-        <Dialog
-          open={showDAModal}
-          onClose={() => setShowDAModal(false)}
-          className="relative z-50"
-        >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-3xl rounded-2xl bg-white p-6 shadow-xl w-full">
-              <Dialog.Title className="text-lg font-semibold">
-                Disciplinary Action Records
-              </Dialog.Title>
-              <p className="mt-2 text-sm text-gray-600">
-                {disciplinaryPercent}% of employees have no DA
-              </p>
-
-              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-                <ul className="space-y-2">
-                  {users.map((u) => (
-                    <li
-                      key={u.id}
-                      className="flex justify-between items-center text-sm p-2 rounded bg-gray-100"
-                    >
-                      <div>
-                        <span className="font-medium">{u.name}</span>
-                        {disciplinaryRecords[u.id] && (
-                          <ul className="ml-4 list-disc text-gray-600">
-                            {disciplinaryRecords[u.id].map((d, idx) => (
-                              <li key={idx}>{d}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSelectedUser(u);
-                          setShowDAModal(false);
-                          setTimeout(() => setShowDAModal(true), 0); // keep modal open but reset
-                        }}
-                        className="ml-4 rounded-md bg-blue-900 px-3 py-1 text-white hover:bg-blue-500"
-                      >
-                        Add DA
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {selectedUser && (
-                <div className="mt-6 border-t pt-4">
-                  <h4 className="font-medium text-gray-700">
-                    Add DA for {selectedUser.name}
-                  </h4>
-                  <div className="flex gap-2 mt-2">
-                    <input
-                      type="text"
-                      value={newDA}
-                      onChange={(e) => setNewDA(e.target.value)}
-                      placeholder="Enter disciplinary action"
-                      className="flex-1 border rounded-md px-2 py-1 text-sm"
-                    />
-                    <button
-                      onClick={handleAddDA}
-                      className="rounded-md bg-green-600 px-3 py-1 text-white hover:bg-green-500"
-                    >
-                      Save
-                    </button>
+        {/* Department Dropdowns */}
+        <div className="bg-white shadow rounded-2xl p-6">
+          <h2 className="text-lg font-semibold mb-4">Departments</h2>
+          <div className="space-y-4">
+            {Object.entries(groupedByDept).map(([dept, members]) => (
+              <Disclosure key={dept}>
+                {({ open }) => (
+                  <div className="border rounded-lg">
+                    <Disclosure.Button className="flex justify-between w-full px-4 py-2 text-left text-sm font-medium bg-gray-100 rounded-lg hover:bg-gray-200">
+                      <span>{dept}</span>
+                      <ChevronUpIcon
+                        className={`${
+                          open ? "rotate-180 transform" : ""
+                        } w-5 h-5 text-gray-500`}
+                      />
+                    </Disclosure.Button>
+                    <Disclosure.Panel className="px-4 pb-4">
+                      <ul className="space-y-2 mt-2">
+                        {members.map((u) => (
+                          <li
+                            key={u.id}
+                            className="flex justify-between items-center text-sm p-2 rounded bg-gray-50 cursor-pointer hover:bg-gray-100"
+                            onClick={() => setSelectedUser(u)}
+                          >
+                            <div>
+                              <span className="font-medium">{u.name}</span>
+                              <span className="ml-2 text-gray-500 text-xs">
+                                {Math.round(u.percentage)}% tasks
+                              </span>
+                              {disciplinaryRecords[u.id] && (
+                                <ul className="ml-4 list-disc text-gray-600">
+                                  {disciplinaryRecords[u.id].map((d, idx) => (
+                                    <li key={idx}>{d}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedUser(u);
+                                setShowDAModal(true);
+                              }}
+                              className="ml-4 rounded-md bg-blue-900 px-3 py-1 text-white hover:bg-blue-500"
+                            >
+                              Add DA
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </Disclosure.Panel>
                   </div>
-                </div>
-              )}
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setShowDAModal(false)}
-                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-                >
-                  Close
-                </button>
-              </div>
-            </Dialog.Panel>
+                )}
+              </Disclosure>
+            ))}
           </div>
-        </Dialog>
-      </div>
+        </div>
 
-      {/* Attendance Modal */}
+        {/* Attendance Modal */}
         <Dialog
           open={showAttendanceModal}
           onClose={() => setShowAttendanceModal(false)}
@@ -503,6 +479,49 @@ export default function OverviewPage() {
             </Dialog.Panel>
           </div>
         </Dialog>
+
+        {/* Disciplinary Action Modal */}
+        <Dialog
+          open={showDAModal}
+          onClose={() => setShowDAModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
+              <Dialog.Title className="text-lg font-semibold">
+                Add Disciplinary Action
+              </Dialog.Title>
+              <p className="mt-2 text-sm text-gray-600">
+                {selectedUser ? selectedUser.name : "Select a user first"}
+              </p>
+
+              <input
+                type="text"
+                value={newDA}
+                onChange={(e) => setNewDA(e.target.value)}
+                placeholder="Enter action"
+                className="mt-4 w-full border rounded-md p-2"
+              />
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDAModal(false)}
+                  className="rounded-md bg-gray-200 px-4 py-2 hover:bg-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddDA}
+                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+                >
+                  Save
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+      </div>
     </div>
   );
 }

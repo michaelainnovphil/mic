@@ -68,6 +68,12 @@ const Header = () => {
         {/* Navigation */}
         <nav className="flex items-center gap-6">
           <Link
+            href="/hr"
+            className="text-gray-700 hover:text-blue-600 font-medium transition"
+          >
+            HR
+          </Link>
+          <Link
             href="/tasks"
             className="text-gray-700 hover:text-blue-600 font-medium transition"
           >
