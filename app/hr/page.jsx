@@ -5,14 +5,8 @@ import {
   PieChart,
   Pie,
   Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import Image from "next/image";
 import Header from "@/components/Header";
 import { Dialog } from "@headlessui/react";
 
@@ -27,7 +21,12 @@ export default function OverviewPage() {
   });
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showTardinessModal, setShowTardinessModal] = useState(false);
-
+  const [showOnTimeModal, setShowOnTimeModal] = useState(false);
+  const [showDAModal, setShowDAModal] = useState(false); // disciplinary modal
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [disciplinaryRecords, setDisciplinaryRecords] = useState({}); // {userId: [actions]}
+  const [newDA, setNewDA] = useState("");
+  const [onTimeCompletion, setOnTimeCompletion] = useState(0);
 
   // fetch users and tasks (monthly stats)
   useEffect(() => {
@@ -97,6 +96,22 @@ export default function OverviewPage() {
           });
 
           setUsers(usersWithTasks);
+
+          // ✅ Compute overall completion %
+          const totalCompleted = usersWithTasks.reduce(
+            (sum, u) => sum + u.completed,
+            0
+          );
+          const totalTasks = usersWithTasks.reduce(
+            (sum, u) => sum + u.total,
+            0
+          );
+          const overallCompletion =
+            totalTasks > 0
+              ? Math.round((totalCompleted / totalTasks) * 100)
+              : 0;
+
+          setOnTimeCompletion(overallCompletion);
         }
       } catch (err) {
         console.error("Failed to fetch users", err);
@@ -109,14 +124,13 @@ export default function OverviewPage() {
   }, [refreshKey]);
 
   // fetch today's attendance/tardiness
-    useEffect(() => {
+  useEffect(() => {
     async function fetchDailyStats() {
       try {
         const res = await fetch("/api/presence");
         const data = await res.json();
 
         if (res.ok && data) {
-          
           const grouped = {
             present: [],
             tardy: [],
@@ -130,21 +144,18 @@ export default function OverviewPage() {
               grouped.present.push(u);
             } else if (state === "tardy") {
               grouped.tardy.push(u);
-            } else if (state === "absent") {
-              grouped.absent.push(u);
             } else {
-              // if API returns something unexpected, default to absent
               grouped.absent.push(u);
             }
           });
 
           setDailyStats({
             attendance: Math.round(data.percent || 0),
-            tardiness: Math.round(((data.tardy || 0) / (data.present || 1)) * 100),
+            tardiness: Math.round(
+              ((data.tardy || 0) / (data.present || 1)) * 100
+            ),
             details: grouped,
           });
-        } else {
-          console.error("Failed to fetch presence stats", data);
         }
       } catch (err) {
         console.error("Failed to fetch daily stats", err);
@@ -154,20 +165,64 @@ export default function OverviewPage() {
     fetchDailyStats();
   }, []);
 
+  // ✅ Fetch Disciplinary Actions from DB
+  useEffect(() => {
+    async function fetchDA() {
+      try {
+        const res = await fetch("/api/disciplinary");
+        if (res.ok) {
+          const data = await res.json();
+          setDisciplinaryRecords(data); // { userId: [actions] }
+        }
+      } catch (err) {
+        console.error("Failed to fetch DA", err);
+      }
+    }
+    fetchDA();
+  }, []);
 
-  const sortedEmployees = [...users].sort(
-    (a, b) => b.percentage - a.percentage
-  );
-  const top3 = sortedEmployees.slice(0, 3);
-  const others = sortedEmployees.slice(3);
+  // ✅ Compute Disciplinary Action %
+  const totalUsers = users.length;
+  const usersWithDA = Object.keys(disciplinaryRecords).length;
+  const disciplinaryPercent =
+    totalUsers > 0 ? Math.round(((totalUsers - usersWithDA) / totalUsers) * 100) : 100;
 
   const pieData = [
     { name: "Attendance", value: Math.round(dailyStats.attendance) },
     { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
     { name: "Adherence", value: 92 },
-    { name: "Disciplinary Action", value: 88 },
-    { name: "On-Time Completion", value: 91 },
+    { name: "Disciplinary Action", value: disciplinaryPercent },
+    { name: "On-Time Completion", value: onTimeCompletion },
   ];
+
+  // ✅ Persist DA to MongoDB
+  const handleAddDA = async () => {
+    if (!selectedUser || !newDA.trim()) return;
+
+    try {
+      const res = await fetch("/api/disciplinary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          action: newDA.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setDisciplinaryRecords((prev) => {
+          const existing = prev[selectedUser.id] || [];
+          return { ...prev, [selectedUser.id]: [...existing, newDA.trim()] };
+        });
+        setNewDA("");
+        setShowDAModal(false);
+      } else {
+        console.error("Failed to save DA");
+      }
+    } catch (err) {
+      console.error("Error saving DA", err);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -185,10 +240,11 @@ export default function OverviewPage() {
                 key={item.name}
                 className="flex flex-col items-center cursor-pointer"
                 onClick={() => {
-  if (item.name === "Attendance") setShowAttendanceModal(true);
-  if (item.name === "Tardiness") setShowTardinessModal(true);
-}}
-
+                  if (item.name === "Attendance") setShowAttendanceModal(true);
+                  if (item.name === "Tardiness") setShowTardinessModal(true);
+                  if (item.name === "On-Time Completion") setShowOnTimeModal(true);
+                  if (item.name === "Disciplinary Action") setShowDAModal(true);
+                }}
               >
                 <div className="relative w-28 h-28">
                   <ResponsiveContainer width="100%" height="100%">
@@ -218,7 +274,91 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Attendance Modal */}
+        {/* ✅ Disciplinary Action Modal */}
+        <Dialog
+          open={showDAModal}
+          onClose={() => setShowDAModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-3xl rounded-2xl bg-white p-6 shadow-xl w-full">
+              <Dialog.Title className="text-lg font-semibold">
+                Disciplinary Action Records
+              </Dialog.Title>
+              <p className="mt-2 text-sm text-gray-600">
+                {disciplinaryPercent}% of employees have no DA
+              </p>
+
+              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
+                <ul className="space-y-2">
+                  {users.map((u) => (
+                    <li
+                      key={u.id}
+                      className="flex justify-between items-center text-sm p-2 rounded bg-gray-100"
+                    >
+                      <div>
+                        <span className="font-medium">{u.name}</span>
+                        {disciplinaryRecords[u.id] && (
+                          <ul className="ml-4 list-disc text-gray-600">
+                            {disciplinaryRecords[u.id].map((d, idx) => (
+                              <li key={idx}>{d}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedUser(u);
+                          setShowDAModal(false);
+                          setTimeout(() => setShowDAModal(true), 0); // keep modal open but reset
+                        }}
+                        className="ml-4 rounded-md bg-blue-900 px-3 py-1 text-white hover:bg-blue-500"
+                      >
+                        Add DA
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {selectedUser && (
+                <div className="mt-6 border-t pt-4">
+                  <h4 className="font-medium text-gray-700">
+                    Add DA for {selectedUser.name}
+                  </h4>
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={newDA}
+                      onChange={(e) => setNewDA(e.target.value)}
+                      placeholder="Enter disciplinary action"
+                      className="flex-1 border rounded-md px-2 py-1 text-sm"
+                    />
+                    <button
+                      onClick={handleAddDA}
+                      className="rounded-md bg-green-600 px-3 py-1 text-white hover:bg-green-500"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowDAModal(false)}
+                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+                >
+                  Close
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+      </div>
+
+      {/* Attendance Modal */}
         <Dialog
           open={showAttendanceModal}
           onClose={() => setShowAttendanceModal(false)}
@@ -322,9 +462,47 @@ export default function OverviewPage() {
           </div>
         </Dialog>
 
+        {/* On-Time Completion Modal */}
+        <Dialog
+          open={showOnTimeModal}
+          onClose={() => setShowOnTimeModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-3xl rounded-2xl bg-white p-6 shadow-xl w-full">
+              <Dialog.Title className="text-lg font-semibold">
+                On-Time Completion Details
+              </Dialog.Title>
+              <p className="mt-2 text-sm text-gray-600">
+                {onTimeCompletion}% of tasks completed on time
+              </p>
 
+              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
+                <ul className="space-y-1">
+                  {users.map((u) => (
+                    <li
+                      key={u.id}
+                      className="flex justify-between text-sm p-2 rounded bg-gray-100"
+                    >
+                      <span>{u.name}</span>
+                      <span className="italic">{Math.round(u.percentage)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
 
-      </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowOnTimeModal(false)}
+                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+                >
+                  Close
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
     </div>
   );
 }

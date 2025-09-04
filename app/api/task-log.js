@@ -1,39 +1,45 @@
 // /pages/api/task-log.js
+import { getServerSession } from "next-auth";
+import { authOptions } from "./auth/[...nextauth]"; // adjust path if different
 import { connectToDatabase } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import Task from "@/lib/models/Task";
 
 export default async function handler(req, res) {
   try {
+    const session = await getServerSession(req, res, authOptions);
+    const email = session?.user?.email;
+
+    if (!email) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    await connectToDatabase();
     const { db } = await connectToDatabase();
     const collection = db.collection("tasklogs");
-    const tasks = db.collection("tasks");
 
     if (req.method === "POST") {
-      const { user, taskId, action } = req.body;
+      console.log("Incoming body:", req.body);
+
+      const { taskId, action } = req.body;
       const now = new Date();
 
-      if (!user || !taskId || !action) {
+      if (!taskId || !action) {
+        console.error("❌ Missing required fields:", { taskId, action });
         return res.status(400).json({ error: "Missing required fields" });
       }
 
-      // --- handle task start/resume ---
+      // --- handle start/resume
       if (action === "start" || action === "resume") {
-        const log = {
-          user,
-          taskId,
-          action,
-          timestamp: now,
-        };
+        const log = { email, taskId, action, timestamp: now };
         await collection.insertOne(log);
-
         return res.status(201).json({ success: true, message: "Task started/resumed", log });
       }
 
-      // --- handle task stop ---
+      // --- handle stop
       if (action === "stop") {
-        // find the latest start/resume before this stop
         const latestStart = await collection.findOne(
-          { taskId, user, action: { $in: ["start", "resume"] } },
+          { taskId, email, action: { $in: ["start", "resume"] } },
           { sort: { timestamp: -1 } }
         );
 
@@ -43,9 +49,8 @@ export default async function handler(req, res) {
 
         const durationSeconds = Math.floor((now - latestStart.timestamp) / 1000);
 
-        // insert stop log with duration
         const stopLog = {
-          user,
+          email,
           taskId,
           action: "stop",
           timestamp: now,
@@ -53,8 +58,7 @@ export default async function handler(req, res) {
         };
         await collection.insertOne(stopLog);
 
-        // increment duration on task (store in seconds)
-        await tasks.updateOne(
+        await Task.updateOne(
           { _id: new ObjectId(taskId) },
           { $inc: { duration: durationSeconds } }
         );

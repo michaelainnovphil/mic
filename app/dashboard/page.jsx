@@ -42,10 +42,11 @@ export default function UserList() {
         // --- Build shiftStats ---
         const formattedStats = {};
         for (const [userId, shiftHoursRaw] of Object.entries(userShifts)) {
-          const shiftHours = Number(shiftHoursRaw) || 0;
-          const usedHours = Number(taskStats[userId]?.totalDuration) || 0;
-          const remaining = shiftHours - usedHours;
           const normalizedEmail = userId.toLowerCase().trim();
+          const shiftHours = Number(shiftHoursRaw) || 0;
+          const usedHours = Number(taskStats[normalizedEmail]?.totalDuration) || 0;
+          const remaining = shiftHours - usedHours;
+
           formattedStats[normalizedEmail] = {
             userId: normalizedEmail,
             shiftHours,
@@ -53,9 +54,10 @@ export default function UserList() {
             remaining,
           };
         }
+
         setShiftStats(formattedStats);
 
-        // Handle user grouping
+        // --- Handle user grouping ---
         const usersJson = await usersRes.json();
         const chiefsList = [];
         const groups = {};
@@ -65,7 +67,9 @@ export default function UserList() {
           const jobTitle = user.jobTitle;
           const isChief = jobTitle.toLowerCase().includes("chief");
           const userEmail = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
-          user.taskStats = taskStats[userEmail] || { completed: 0, pending: 0 };
+
+          // ✅ Keep all stats: completed, pending, totalDuration
+          user.taskStats = taskStats[userEmail] || { completed: 0, pending: 0, totalDuration: 0 };
 
           if (isChief) {
             chiefsList.push(user);
@@ -102,7 +106,7 @@ export default function UserList() {
                   className="bg-white rounded-2xl shadow p-4 w-64 hover:shadow-md transition cursor-pointer"
                 >
                   <img
-                    src={user.photo} 
+                    src={user.photo}
                     alt={user.displayName}
                     style={{ width: 48, height: 48, borderRadius: "50%" }}
                   />
@@ -138,12 +142,10 @@ export default function UserList() {
                         >
                           <div>
                             <img
-                              src={user.photo} 
+                              src={user.photo}
                               alt={user.displayName}
                               style={{ width: 48, height: 48, borderRadius: "50%" }}
                             />
-
-
 
                             <h4 className="text-lg font-semibold text-gray-900 mb-1">
                               {user.displayName}
@@ -164,55 +166,55 @@ export default function UserList() {
       </div>
 
       {/* Modal */}
-{selectedUser && (
-  <div
-    className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
-    onClick={() => setSelectedUser(null)}
-  >
-    <div
-      className="bg-white/95 rounded-2xl shadow-xl p-6 max-w-md w-full relative"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Close button */}
-      <button
-        onClick={() => setSelectedUser(null)}
-        className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 text-xl"
-      >
-        ✕
-      </button>
+      {selectedUser && (
+        <div
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          onClick={() => setSelectedUser(null)}
+        >
+          <div
+            className="bg-white/95 rounded-2xl shadow-xl p-6 max-w-md w-full relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setSelectedUser(null)}
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 text-xl"
+            >
+              ✕
+            </button>
 
-      {/* Header */}
-      <div className="mb-4">
-        <h3 className="text-xl font-semibold text-gray-900">
-          {selectedUser.displayName}
-        </h3>
-        <p className="text-sm text-gray-600">
-          {selectedUser.mail || selectedUser.userPrincipalName}
-        </p>
-        <p className="text-xs text-gray-500 italic">{selectedUser.jobTitle}</p>
-      </div>
+            {/* Header */}
+            <div className="mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">
+                {selectedUser.displayName}
+              </h3>
+              <p className="text-sm text-gray-600">
+                {selectedUser.mail || selectedUser.userPrincipalName}
+              </p>
+              <p className="text-xs text-gray-500 italic">{selectedUser.jobTitle}</p>
+            </div>
 
-      {/* Shift/task info */}
-      {(() => {
-        const email = (selectedUser.mail || selectedUser.userPrincipalName)?.toLowerCase().trim();
-        const stats = shiftStats[email] || { shiftHours: 0, usedHours: 0, remaining: 0 };
-        return (
-          <div className="space-y-2 text-sm text-gray-700">
-            <p>⏱ <strong>Shift Hours:</strong> {stats.shiftHours.toFixed(2)} hrs</p>
-            <p>📋 <strong>Task Duration:</strong> {stats.usedHours.toFixed(2)} hrs</p>
-            <p className="text-green-600 font-medium">
-              <strong>Remaining:</strong> {stats.remaining.toFixed(2)} hrs
-            </p>
-            <p className="mt-2">
-              ✅ Completed: {selectedUser.taskStats?.completed ?? 0} | ⏳ Pending: {selectedUser.taskStats?.pending ?? 0}
-            </p>
+            {/* Shift/task info */}
+            {(() => {
+              const email = (selectedUser.mail || selectedUser.userPrincipalName)?.toLowerCase().trim();
+              const shift = shiftStats[email] || { shiftHours: 0, usedHours: 0, remaining: 0 };
+
+              return (
+                <div className="space-y-2 text-sm text-gray-700">
+                  <p>⏱ <strong>Shift Hours:</strong> {shift.shiftHours.toFixed(2)} hrs</p>
+                  <p>📋 <strong>Task Duration:</strong> {(selectedUser.taskStats?.totalDuration ?? 0).toFixed(2)} hrs</p>
+                  <p className="text-green-600 font-medium">
+                    <strong>Remaining:</strong> {shift.remaining.toFixed(2)} hrs
+                  </p>
+                  <p className="mt-2">
+                    ✅ Completed: {selectedUser.taskStats?.completed ?? 0} | ⏳ Pending: {selectedUser.taskStats?.pending ?? 0}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
-        );
-      })()}
-    </div>
-  </div>
-)}
-
+        </div>
+      )}
     </div>
   );
 }
