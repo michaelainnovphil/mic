@@ -44,7 +44,11 @@ export default function UserList() {
         for (const [userId, shiftHoursRaw] of Object.entries(userShifts)) {
           const normalizedEmail = userId.toLowerCase().trim();
           const shiftHours = Number(shiftHoursRaw) || 0;
-          const usedHours = Number(taskStats[normalizedEmail]?.totalDuration) || 0;
+
+          // convert durationSeconds → hours
+          const usedHours =
+            Number(taskStats[normalizedEmail]?.durationSeconds || 0) / 3600;
+
           const remaining = shiftHours - usedHours;
 
           formattedStats[normalizedEmail] = {
@@ -68,8 +72,13 @@ export default function UserList() {
           const isChief = jobTitle.toLowerCase().includes("chief");
           const userEmail = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
 
-          // ✅ Keep all stats: completed, pending, totalDuration
-          user.taskStats = taskStats[userEmail] || { completed: 0, pending: 0, totalDuration: 0 };
+          // Keep all stats: completed, pending, totalDuration
+          user.taskStats = {
+            completed: taskStats[userEmail]?.completed || 0,
+            pending: taskStats[userEmail]?.pending || 0,
+            totalDuration: (taskStats[userEmail]?.durationSeconds || 0) / 3600, // convert to hours
+          };
+
 
           if (isChief) {
             chiefsList.push(user);
@@ -203,7 +212,7 @@ export default function UserList() {
               return (
                 <div className="space-y-2 text-sm text-gray-700">
                   <p>⏱ <strong>Shift Hours:</strong> {shift.shiftHours.toFixed(2)} hrs</p>
-                  <p>📋 <strong>Task Duration:</strong> {(selectedUser .taskStats?.totalDuration ?? 0).toFixed(2)} hrs</p>
+                  📋 <strong>Task Duration:</strong> {(selectedUser.taskStats?.totalDuration ?? 0).toFixed(2)} hrs
                   <p className="text-green-600 font-medium">
                     <strong>Remaining:</strong> {shift.remaining.toFixed(2)} hrs
                   </p>

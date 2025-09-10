@@ -20,6 +20,9 @@ function AssignmentContent() {
   const [teamTasks, setTeamTasks] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [assignedTo, setAssignedTo] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [userTasks, setUserTasks] = useState({ completed: [], inProgress: [], pending: [] });
 
   // Restrict access to assignment page
   useEffect(() => {
@@ -99,6 +102,35 @@ function AssignmentContent() {
     });
 
     setTeamTasks(userStats);
+  };
+
+  const fetchUserTasks = async (user) => {
+    const res = await fetch("/api/tasks");
+    const data = await res.json();
+
+    const completed = [];
+    const inProgress = [];
+    const pending = [];
+
+    (data || []).forEach((task) => {
+      if (task.assignedTo?.includes(user)) {
+        if (task.status === "completed") {
+          completed.push(task);
+        } else if (task.status === "in-progress") {
+          inProgress.push(task);
+        } else {
+          pending.push(task);
+        }
+      }
+    });
+
+    setUserTasks({ completed, inProgress, pending });
+  };
+
+  const handleUserClick = (user) => {
+    setSelectedUser(user);
+    fetchUserTasks(user);
+    setIsModalOpen(true);
   };
 
   const handleAddTask = async () => {
@@ -223,28 +255,27 @@ function AssignmentContent() {
               ) : (
                 assignedTasks.map((task) => (
                   <div
-                  key={task._id}
-                  className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
-                >
-                  {/* Header row with title and delete button */}
-                  <div className="flex justify-between items-start">
-                    <h3 className="font-bold">{task.title}</h3>
+                    key={task._id}
+                    className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
+                  >
+                    {/* Header row with title and delete button */}
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-bold">{task.title}</h3>
 
-                    <button
-                      onClick={() => handleDeleteTask(task._id)}
-                      className="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1 rounded"
-                    >
-                      🗑 Delete
-                    </button>
+                      <button
+                        onClick={() => handleDeleteTask(task._id)}
+                        className="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1 rounded"
+                      >
+                        🗑 Delete
+                      </button>
+                    </div>
+
+                    {task.description && <p className="text-sm">{task.description}</p>}
+                    <p className="text-sm text-gray-500">Priority: {task.priority}</p>
+                    {task.assignedTo && (
+                      <p className="text-sm">Assigned to: {task.assignedTo}</p>
+                    )}
                   </div>
-
-                  {task.description && <p className="text-sm">{task.description}</p>}
-                  <p className="text-sm text-gray-500">Priority: {task.priority}</p>
-                  {task.assignedTo && (
-                    <p className="text-sm">Assigned to: {task.assignedTo}</p>
-                  )}
-                </div>
-
                 ))
               )}
             </div>
@@ -267,12 +298,13 @@ function AssignmentContent() {
                   return (
                     <div
                       key={user}
-                      className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
+                      onClick={() => handleUserClick(user)}
+                      className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2 cursor-pointer hover:ring-2 hover:ring-blue-500 transition"
                     >
                       <h3 className="font-bold">{user}</h3>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
                         <div
-                          className="bg-blue-600 h-4 transition-all duration-500"
+                          className="bg-blue-900 h-4 transition-all duration-500"
                           style={{ width: `${percent}%` }}
                         ></div>
                       </div>
@@ -288,6 +320,66 @@ function AssignmentContent() {
           </div>
         </div>
       </div>
+
+      {/* Modal for User Tasks */}
+      <Dialog
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        className="fixed inset-0 z-50 flex items-center justify-center"
+      >
+        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 z-50 max-w-2xl w-full mx-4">
+          <h2 className="text-2xl font-bold mb-4">{selectedUser}'s Tasks</h2>
+
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-semibold text-green-600">✅ Completed</h3>
+              {userTasks.completed.length > 0 ? (
+                <ul className="list-disc ml-5">
+                  {userTasks.completed.map((task) => (
+                    <li key={task._id}>{task.title}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No completed tasks</p>
+              )}
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-yellow-600">⏳ In Progress</h3>
+              {userTasks.inProgress.length > 0 ? (
+                <ul className="list-disc ml-5">
+                  {userTasks.inProgress.map((task) => (
+                    <li key={task._id}>{task.title}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No in-progress tasks</p>
+              )}
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-red-600">📝 Pending</h3>
+              {userTasks.pending.length > 0 ? (
+                <ul className="list-disc ml-5">
+                  {userTasks.pending.map((task) => (
+                    <li key={task._id}>{task.title}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">No pending tasks</p>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setIsModalOpen(false)}
+            className="mt-6 bg-blue-900 text-white px-6 py-2 rounded-lg hover:bg-blue-800"
+          >
+            Close
+          </button>
+        </div>
+      </Dialog>
 
       {/* Timer widget */}
       <TaskTimerWidget />
