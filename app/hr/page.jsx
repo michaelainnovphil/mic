@@ -13,6 +13,7 @@ import { Dialog, Disclosure } from "@headlessui/react";
 import { ChevronUpIcon } from "lucide-react";
 import { TEAM_MAP } from "@/lib/teamMap";
 
+
 export default function OverviewPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -283,7 +284,7 @@ export default function OverviewPage() {
             {Object.entries(groupedByDept).map(([dept, members]) => (
               <Disclosure key={dept}>
                 {({ open }) => (
-                  <div className="border rounded-lg">
+                  <div className="border border-[#0a1f8f] rounded-lg">
                     <Disclosure.Button className="flex justify-between w-full px-4 py-2 text-left text-sm font-medium bg-gray-100 rounded-lg hover:bg-gray-200">
                       <span>{dept}</span>
                       <ChevronUpIcon
@@ -333,6 +334,7 @@ export default function OverviewPage() {
             ))}
           </div>
         </div>
+
 
         {/* Attendance Modal */}
         <Dialog

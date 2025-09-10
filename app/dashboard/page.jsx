@@ -164,6 +164,7 @@ export default function UserList() {
             ))
         )}
       </div>
+      
 
       {/* Modal */}
       {selectedUser && (
@@ -202,7 +203,7 @@ export default function UserList() {
               return (
                 <div className="space-y-2 text-sm text-gray-700">
                   <p>⏱ <strong>Shift Hours:</strong> {shift.shiftHours.toFixed(2)} hrs</p>
-                  <p>📋 <strong>Task Duration:</strong> {(selectedUser.taskStats?.totalDuration ?? 0).toFixed(2)} hrs</p>
+                  <p>📋 <strong>Task Duration:</strong> {(selectedUser .taskStats?.totalDuration ?? 0).toFixed(2)} hrs</p>
                   <p className="text-green-600 font-medium">
                     <strong>Remaining:</strong> {shift.remaining.toFixed(2)} hrs
                   </p>
