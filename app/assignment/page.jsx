@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
+import { Dialog } from "@headlessui/react";
 import TaskTimerWidget from "@/components/TaskTimerWidget";
 
 function AssignmentContent() {

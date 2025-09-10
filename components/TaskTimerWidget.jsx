@@ -44,32 +44,35 @@ export default function TaskTimerWidget() {
     }, 1000);
   };
 
-  const exportLogsToExcel = () => {
-    if (!logsRef.current || logsRef.current.length === 0) {
-      alert("No task logs to export.");
-      return;
-    }
+  const exportLogsToExcel = async () => {
+  if (!logsRef.current || logsRef.current.length === 0) {
+    alert("No task logs to export.");
+    return;
+  }
 
-    const today = new Date();
-    const formattedDate = today.toISOString().split("T")[0];
+  const today = new Date();
+  const formattedDate = today.toISOString().split("T")[0];
 
-    const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
+  const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
+  logsRef.current.forEach((log) => {
+    wsData.push([
+      formattedDate,
+      log.task || "",
+      log.description || "",
+      log.taskType || "",
+      formatTime(log.durationSeconds || 0),
+    ]);
+  });
 
-    logsRef.current.forEach((log) => {
-      wsData.push([
-        formattedDate,
-        log.task || "",
-        log.description || "",
-        log.taskType || "",
-        formatTime(log.durationSeconds || 0),
-      ]);
-    });
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
+  XLSX.writeFile(workbook, "task_logs.xlsx");
 
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
-    XLSX.writeFile(workbook, "task_logs.xlsx");
-  };
+  // ✅ Also upload logs to DB so dashboard sees them
+  await uploadLogsToDatabase();
+};
+
 
   const uploadLogsToDatabase = async () => {
     if (!logsRef.current || logsRef.current.length === 0) return;

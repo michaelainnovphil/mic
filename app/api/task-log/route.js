@@ -1,5 +1,3 @@
-// api/task-log/route.js
-
 import { NextResponse } from "next/server";
 import connectToDatabase from "@/lib/mongodb";
 import TaskLog from "@/lib/models/TaskLog";
@@ -9,27 +7,52 @@ export async function POST(req) {
     await connectToDatabase();
     const body = await req.json();
 
-    const { email, taskId, task, taskType, description, durationSeconds, timestamp } = body;
+    console.log("Incoming /api/task-log payload:", body);
 
-    if (!email || !taskId || typeof durationSeconds !== "number") {
-      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
+    // Normalize email
+    let email = body.email || body.user;
+    if (Array.isArray(email)) {
+      email = email[0];
     }
 
-    const newLog = new TaskLog({
-      email,
-      taskId,
-      task,
-      taskType,
-      description,
-      durationSeconds,
-      timestamp,
-    });
+    const taskId = body.taskId;
+    const task = body.task || "";
+    const taskType = body.taskType || "";
+    const description = body.description || "";
 
-    const savedLog = await newLog.save();
+    // Normalize duration → always store as durationSeconds
+    const durationSeconds =
+      typeof body.durationSeconds === "number"
+        ? body.durationSeconds
+        : typeof body.duration === "number"
+        ? body.duration
+        : 0;
 
-    return NextResponse.json({ success: true, log: savedLog }, { status: 201 });
+    const timestamp = body.timestamp ? new Date(body.timestamp) : new Date();
+
+    if (!email || !taskId || typeof durationSeconds !== "number") {
+      return NextResponse.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    const updatedLog = await TaskLog.findOneAndUpdate(
+      { email, taskId },
+      {
+        $set: { task, taskType, description, lastUpdated: new Date() },
+        $inc: { durationSeconds },
+        $push: { timestamps: timestamp },
+      },
+      { new: true, upsert: true }
+    );
+
+    return NextResponse.json({ success: true, log: updatedLog }, { status: 200 });
   } catch (err) {
     console.error("Error in POST /api/task-log:", err);
-    return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Internal Server Error" },
+      { status: 500 }
+    );
   }
 }
