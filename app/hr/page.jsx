@@ -13,12 +13,12 @@ import { Dialog, Disclosure } from "@headlessui/react";
 import { ChevronUpIcon } from "lucide-react";
 import { TEAM_MAP } from "@/lib/teamMap";
 
-
 export default function OverviewPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [dailyStats, setDailyStats] = useState({
+    presence: 0,
     attendance: 0,
     tardiness: 0,
     details: { present: [], tardy: [], absent: [] },
@@ -30,7 +30,7 @@ export default function OverviewPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [disciplinaryRecords, setDisciplinaryRecords] = useState({});
   const [newDA, setNewDA] = useState("");
-  const [onTimeCompletion, setOnTimeCompletion] = useState(0);
+  const [showPresenceModal, setShowPresenceModal] = useState(false);
 
   // fetch users and tasks
   useEffect(() => {
@@ -94,13 +94,6 @@ export default function OverviewPage() {
           });
 
           setUsers(usersWithTasks);
-
-          const totalCompleted = usersWithTasks.reduce((sum, u) => sum + u.completed, 0);
-          const totalTasks = usersWithTasks.reduce((sum, u) => sum + u.total, 0);
-          const overallCompletion =
-            totalTasks > 0 ? Math.round((totalCompleted / totalTasks) * 100) : 0;
-
-          setOnTimeCompletion(overallCompletion);
         }
       } catch (err) {
         console.error("Failed to fetch users", err);
@@ -112,25 +105,75 @@ export default function OverviewPage() {
     fetchUsersAndTasks();
   }, [refreshKey]);
 
-  // fetch daily attendance
+  // fetch daily presence & attendance
   useEffect(() => {
     async function fetchDailyStats() {
       try {
         const res = await fetch("/api/presence");
         const data = await res.json();
 
+        // ✅ use /api/shifts instead of /api/clockins
+        const shiftRes = await fetch("/api/shifts");
+        const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
+        const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
+
         if (res.ok && data) {
           const grouped = { present: [], tardy: [], absent: [] };
-          (data.details || []).forEach((u) => {
-            const state = (u.status || "absent").toLowerCase();
-            if (state === "present") grouped.present.push(u);
-            else if (state === "tardy") grouped.tardy.push(u);
-            else grouped.absent.push(u);
+
+          const detailsWithAttendance = (data.details || []).map((u) => {
+            const status = (u.status || "absent").toLowerCase();
+            let attendanceScore = 50;
+            let firstLoginTime = null;
+
+            // check firstLogin OR latest shift clockIn
+            const userShifts = shiftDetailsPerUser[u.email?.toLowerCase()] || [];
+            const latestShift = userShifts[userShifts.length - 1];
+            const clockInTime = latestShift?.clockIn || null;
+
+            if (u.firstLogin || clockInTime) {
+              firstLoginTime = new Date(u.firstLogin || clockInTime);
+              const cutoff = new Date(firstLoginTime);
+              cutoff.setHours(8, 30, 0, 0);
+
+              if (firstLoginTime <= cutoff) {
+                attendanceScore = 100;
+              } else {
+                const diffMins = Math.floor((firstLoginTime - cutoff) / 60000);
+                if (diffMins <= 5) attendanceScore = 95;
+                else if (diffMins <= 10) attendanceScore = 90;
+                else if (diffMins <= 15) attendanceScore = 85;
+                else attendanceScore = 50;
+              }
+            }
+
+            // override absent if clock-in exists
+            let finalStatus = status;
+            if (clockInTime) {
+              const cutoff = new Date();
+              cutoff.setHours(8, 30, 0, 0);
+              finalStatus = firstLoginTime <= cutoff ? "present" : "tardy";
+            }
+
+            if (finalStatus === "present") grouped.present.push({ ...u, attendanceScore, firstLoginTime });
+            else if (finalStatus === "tardy") grouped.tardy.push({ ...u, attendanceScore, firstLoginTime });
+            else grouped.absent.push({ ...u, attendanceScore, firstLoginTime });
+
+            return { ...u, attendanceScore, firstLoginTime, status: finalStatus };
           });
 
+          const totalUsers = detailsWithAttendance.length || 1;
+          const presentCount = grouped.present.length + grouped.tardy.length;
+          const presencePercent = Math.round((presentCount / totalUsers) * 100);
+
+          const avgAttendance =
+            Math.round(
+              detailsWithAttendance.reduce((sum, u) => sum + (u.attendanceScore || 0), 0) / totalUsers
+            ) || 0;
+
           setDailyStats({
-            attendance: Math.round(data.percent || 0),
-            tardiness: Math.round(((data.tardy || 0) / (data.present || 1)) * 100),
+            presence: presencePercent,
+            attendance: avgAttendance,
+            tardiness: Math.round(((grouped.tardy.length || 0) / (presentCount || 1)) * 100),
             details: grouped,
           });
         }
@@ -164,34 +207,37 @@ export default function OverviewPage() {
   const disciplinaryPercent =
     totalUsers > 0 ? Math.round(((totalUsers - usersWithDA) / totalUsers) * 100) : 100;
 
-  // build pieData (switches based on selectedUser)
+  // build pieData
   const buildPieData = () => {
     if (!selectedUser) {
-      // overall
       return [
+        { name: "Presence", value: Math.round(dailyStats.presence) },
         { name: "Attendance", value: Math.round(dailyStats.attendance) },
         { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
         { name: "Adherence", value: 92 },
         { name: "Disciplinary Action", value: disciplinaryPercent },
-        { name: "On-Time Completion", value: onTimeCompletion },
       ];
     } else {
-      // per user
-      const isPresent = dailyStats.details.present.some((u) => u.userId === selectedUser.id);
+      const userDetail =
+        [...dailyStats.details.present, ...dailyStats.details.tardy, ...dailyStats.details.absent].find(
+          (u) => u.userId === selectedUser.id
+        );
+
+      const presenceVal = userDetail ? 100 : 0;
+      const attendanceVal = userDetail ? userDetail.attendanceScore : 50;
       const isTardy = dailyStats.details.tardy.some((u) => u.userId === selectedUser.id);
-      const attendanceVal = isPresent || isTardy ? 100 : 0;
-      const tardinessVal = isTardy ? 0 : 100;
-      const adherenceVal = 92; // placeholder (could compute real adherence per-user)
+      const tardinessVal = isTardy ? attendanceVal : 100;
+
+      const adherenceVal = 92;
       const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
       const daVal = hasDA ? 0 : 100;
-      const completionVal = Math.round(selectedUser.percentage);
 
       return [
+        { name: "Presence", value: presenceVal },
         { name: "Attendance", value: attendanceVal },
         { name: "Tardiness", value: tardinessVal },
         { name: "Adherence", value: adherenceVal },
         { name: "Disciplinary Action", value: daVal },
-        { name: "On-Time Completion", value: completionVal },
       ];
     }
   };
@@ -243,9 +289,9 @@ export default function OverviewPage() {
                 key={item.name}
                 className="flex flex-col items-center cursor-pointer"
                 onClick={() => {
+                  if (item.name === "Presence") setShowPresenceModal(true);
                   if (item.name === "Attendance") setShowAttendanceModal(true);
                   if (item.name === "Tardiness") setShowTardinessModal(true);
-                  if (item.name === "On-Time Completion") setShowOnTimeModal(true);
                   if (item.name === "Disciplinary Action") setShowDAModal(true);
                 }}
               >
@@ -288,9 +334,7 @@ export default function OverviewPage() {
                     <Disclosure.Button className="flex justify-between w-full px-4 py-2 text-left text-sm font-medium bg-gray-100 rounded-lg hover:bg-gray-200">
                       <span>{dept}</span>
                       <ChevronUpIcon
-                        className={`${
-                          open ? "rotate-180 transform" : ""
-                        } w-5 h-5 text-gray-500`}
+                        className={`${open ? "rotate-180 transform" : ""} w-5 h-5 text-gray-500`}
                       />
                     </Disclosure.Button>
                     <Disclosure.Panel className="px-4 pb-4">
@@ -335,21 +379,20 @@ export default function OverviewPage() {
           </div>
         </div>
 
-
-        {/* Attendance Modal */}
+        {/* Presence Modal */}
         <Dialog
-          open={showAttendanceModal}
-          onClose={() => setShowAttendanceModal(false)}
+          open={showPresenceModal}
+          onClose={() => setShowPresenceModal(false)}
           className="relative z-50"
         >
           <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="mx-auto max-w-2xl rounded-2xl bg-white p-6 shadow-xl w-full">
               <Dialog.Title className="text-lg font-semibold">
-                Attendance Details
+                Presence Details
               </Dialog.Title>
               <p className="mt-2 text-sm text-gray-600">
-                {dailyStats.attendance}% present
+                {dailyStats.presence}% online
               </p>
 
               <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
@@ -377,6 +420,77 @@ export default function OverviewPage() {
 
               <div className="mt-4 flex justify-end">
                 <button
+                  onClick={() => setShowPresenceModal(false)}
+                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+                >
+                  Close
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+
+        {/* Attendance Modal */}
+        <Dialog
+          open={showAttendanceModal}
+          onClose={() => setShowAttendanceModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
+              <Dialog.Title className="text-lg font-semibold">
+                Attendance
+              </Dialog.Title>
+
+              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
+                {/* Present Employees */}
+                {dailyStats.details.present?.length > 0 ? (
+                  <div>
+                    <h4 className="font-medium text-green-600 mb-2">
+                      Present ({dailyStats.details.present.length})
+                    </h4>
+                    <ul className="space-y-1">
+                      {dailyStats.details.present.map((u) => (
+                        <li
+                          key={u.userId}
+                          className="flex justify-between text-sm p-2 rounded bg-green-50 border border-green-200"
+                        >
+                          <span>{u.name}</span>
+                          <span className="italic text-green-700">Present</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No present employees</p>
+                )}
+
+                {/* Absent Employees */}
+                {dailyStats.details.absent?.length > 0 ? (
+                  <div>
+                    <h4 className="font-medium text-red-600 mb-2">
+                      Absent ({dailyStats.details.absent.length})
+                    </h4>
+                    <ul className="space-y-1">
+                      {dailyStats.details.absent.map((u) => (
+                        <li
+                          key={u.userId}
+                          className="flex justify-between text-sm p-2 rounded bg-red-50 border border-red-200"
+                        >
+                          <span>{u.name}</span>
+                          <span className="italic text-red-700">Absent</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">No absent employees</p>
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
                   onClick={() => setShowAttendanceModal(false)}
                   className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
                 >
@@ -395,38 +509,39 @@ export default function OverviewPage() {
         >
           <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
           <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-xl rounded-2xl bg-white p-6 shadow-xl w-full">
+            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
               <Dialog.Title className="text-lg font-semibold">
-                Tardiness Details
+                Tardiness
               </Dialog.Title>
-              <p className="mt-2 text-sm text-gray-600">
-                Employees who logged in after 8:45
-              </p>
 
-              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-                {dailyStats.details.tardy.length > 0 ? (
-                  <ul className="space-y-1">
-                    {dailyStats.details.tardy.map((u) => (
-                      <li
-                        key={u.userId}
-                        className="flex justify-between text-sm p-2 rounded bg-gray-100"
-                      >
-                        <span>{u.name}</span>
-                        <span className="italic text-red-600">
+              {dailyStats.details.tardy?.length > 0 ? (
+                <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
+                  {dailyStats.details.tardy.map((u) => (
+                    <li
+                      key={u.userId}
+                      className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
+                    >
+                      <div className="flex justify-between">
+                        <span className="font-medium">{u.name}</span>
+                        <span className="italic text-yellow-700">Tardy</span>
+                      </div>
+                      <div className="mt-1 text-gray-600">
+                        First login:{" "}
+                        <span className="font-mono">
                           {u.firstLogin
                             ? new Date(u.firstLogin).toLocaleTimeString([], {
                                 hour: "2-digit",
                                 minute: "2-digit",
                               })
-                            : "—"}
+                            : "N/A"}
                         </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-gray-500">No tardy employees</p>
-                )}
-              </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-sm text-gray-500">No tardy employees</p>
+              )}
 
               <div className="mt-4 flex justify-end">
                 <button
@@ -440,49 +555,7 @@ export default function OverviewPage() {
           </div>
         </Dialog>
 
-        {/* On-Time Completion Modal */}
-        <Dialog
-          open={showOnTimeModal}
-          onClose={() => setShowOnTimeModal(false)}
-          className="relative z-50"
-        >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-3xl rounded-2xl bg-white p-6 shadow-xl w-full">
-              <Dialog.Title className="text-lg font-semibold">
-                On-Time Completion Details
-              </Dialog.Title>
-              <p className="mt-2 text-sm text-gray-600">
-                {onTimeCompletion}% of tasks completed on time
-              </p>
-
-              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-                <ul className="space-y-1">
-                  {users.map((u) => (
-                    <li
-                      key={u.id}
-                      className="flex justify-between text-sm p-2 rounded bg-gray-100"
-                    >
-                      <span>{u.name}</span>
-                      <span className="italic">{Math.round(u.percentage)}%</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setShowOnTimeModal(false)}
-                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-                >
-                  Close
-                </button>
-              </div>
-            </Dialog.Panel>
-          </div>
-        </Dialog>
-
-        {/* Disciplinary Action Modal */}
+        {/* Disciplinary Modal */}
         <Dialog
           open={showDAModal}
           onClose={() => setShowDAModal(false)}
@@ -492,24 +565,33 @@ export default function OverviewPage() {
           <div className="fixed inset-0 flex items-center justify-center p-4">
             <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
               <Dialog.Title className="text-lg font-semibold">
-                Add Disciplinary Action
+                Disciplinary Action
               </Dialog.Title>
-              <p className="mt-2 text-sm text-gray-600">
-                {selectedUser ? selectedUser.name : "Select a user first"}
-              </p>
+              {selectedUser && (
+                <p className="mt-2 text-sm text-gray-600">
+                  For {selectedUser.name}
+                </p>
+              )}
+              {selectedUser && disciplinaryRecords[selectedUser.id]?.length > 0 && (
+                <ul className="mt-2 list-disc pl-5 text-sm text-gray-600">
+                  {disciplinaryRecords[selectedUser.id].map((d, idx) => (
+                    <li key={idx}>{d}</li>
+                  ))}
+                </ul>
+              )}
 
               <input
                 type="text"
                 value={newDA}
                 onChange={(e) => setNewDA(e.target.value)}
                 placeholder="Enter action"
-                className="mt-4 w-full border rounded-md p-2"
+                className="mt-4 w-full rounded border px-3 py-2"
               />
 
-              <div className="mt-4 flex justify-end gap-2">
+              <div className="mt-4 flex justify-end space-x-2">
                 <button
                   onClick={() => setShowDAModal(false)}
-                  className="rounded-md bg-gray-200 px-4 py-2 hover:bg-gray-300"
+                  className="rounded-md bg-gray-300 px-4 py-2 hover:bg-gray-400"
                 >
                   Cancel
                 </button>

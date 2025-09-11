@@ -35,7 +35,31 @@ async function fetchAllShifts(teamId, accessToken) {
       throw new Error(`Graph shifts fetch failed ${res.status}: ${text}`);
     }
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
+    const items = Array.isArray(json.value) ? json.value : [];
+    all.push(...items);
+    url = json["@odata.nextLink"] || null;
+  }
+
+  return all;
+}
+
+async function fetchAllTimeCards(teamId, accessToken) {
+  const all = [];
+  let url = `https://graph.microsoft.com/v1.0/teams/${teamId}/schedule/timeCards?$top=200`;
+
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Graph timeCards fetch failed ${res.status}: ${text}`);
+    }
+
+    const json = await res.json().catch(() => ({}));
     const items = Array.isArray(json.value) ? json.value : [];
     all.push(...items);
     url = json["@odata.nextLink"] || null;
@@ -92,10 +116,18 @@ export async function GET() {
     const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
     const shifts = await fetchAllShifts(teamId, session.accessToken);
+    const timeCards = await fetchAllTimeCards(teamId, session.accessToken);
 
-    // Sum hours per Graph userId for current month, including rest days as 0 hours
     const hoursById = {};
     const shiftDetailsPerUser = {};
+
+    // Organize timecards by userId
+    const timeCardsByUser = {};
+    timeCards.forEach((tc) => {
+      if (!tc.userId) return;
+      if (!timeCardsByUser[tc.userId]) timeCardsByUser[tc.userId] = [];
+      timeCardsByUser[tc.userId].push(tc);
+    });
 
     shifts.forEach((shift) => {
       const userId = shift.userId;
@@ -108,17 +140,59 @@ export async function GET() {
       const e = new Date(end);
 
       if (s >= monthStart && s < nextMonthStart) {
-        const hours = (e - s) / (1000 * 60 * 60);
+        const scheduledHours = (e - s) / (1000 * 60 * 60);
 
-        hoursById[userId] = (hoursById[userId] || 0) + hours;
+        hoursById[userId] = (hoursById[userId] || 0) + scheduledHours;
 
         if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
-        shiftDetailsPerUser[userId].push({
+
+        // Base entry
+        const baseEntry = {
           start: s.toISOString(),
           end: e.toISOString(),
-          hours,
+          scheduledHours,
           note: shift.sharedShift?.notes || shift.displayName || "",
-        });
+        };
+
+        // Merge in timeCards if available
+        if (timeCardsByUser[userId] && timeCardsByUser[userId].length > 0) {
+          timeCardsByUser[userId].forEach((tc) => {
+            const clockIn = tc.clockInEvent?.dateTime
+              ? new Date(tc.clockInEvent.dateTime)
+              : null;
+            const clockOut = tc.clockOutEvent?.dateTime
+              ? new Date(tc.clockOutEvent.dateTime)
+              : null;
+
+            
+            if (
+              clockIn &&
+              (clockIn < monthStart || clockIn >= nextMonthStart)
+            ) {
+              return; // skip this timecard
+            }
+
+            let workedHours = null;
+            if (clockIn && clockOut) {
+              workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
+            }
+
+            shiftDetailsPerUser[userId].push({
+              ...baseEntry,
+              clockIn: clockIn ? clockIn.toISOString() : null,
+              clockOut: clockOut ? clockOut.toISOString() : null,
+              workedHours,
+            });
+          });
+        } else {
+          // no clock-ins
+          shiftDetailsPerUser[userId].push({
+            ...baseEntry,
+            clockIn: null,
+            clockOut: null,
+            workedHours: null,
+          });
+        }
       }
     });
 
@@ -127,10 +201,22 @@ export async function GET() {
     // Attach shift details per email for frontend use
     const shiftDetailsByEmail = {};
     for (const [userId, details] of Object.entries(shiftDetailsPerUser)) {
-      const email = Object.keys(shiftHoursPerUser).find(
-        (e) => e.toLowerCase().trim() === userId.toLowerCase().trim()
-      );
-      if (email) shiftDetailsByEmail[email] = details;
+      try {
+        const res = await fetch(
+          `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(userId)}?$select=mail,userPrincipalName`,
+          { headers: { Authorization: `Bearer ${session.accessToken}` } }
+        );
+
+        if (res.ok) {
+          const u = await res.json();
+          const email = (u.mail || u.userPrincipalName || userId).toLowerCase().trim();
+          shiftDetailsByEmail[email] = details;
+        } else {
+          shiftDetailsByEmail[userId.toLowerCase().trim()] = details;
+        }
+      } catch {
+        shiftDetailsByEmail[userId.toLowerCase().trim()] = details;
+      }
     }
 
     return NextResponse.json({ shiftHoursPerUser, shiftDetailsPerUser: shiftDetailsByEmail });
