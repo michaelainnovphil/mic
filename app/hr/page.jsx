@@ -112,7 +112,6 @@ export default function OverviewPage() {
         const res = await fetch("/api/presence");
         const data = await res.json();
 
-        // ✅ use /api/shifts instead of /api/clockins
         const shiftRes = await fetch("/api/shifts");
         const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
         const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
@@ -125,7 +124,6 @@ export default function OverviewPage() {
             let attendanceScore = 50;
             let firstLoginTime = null;
 
-            // check firstLogin OR latest shift clockIn
             const userShifts = shiftDetailsPerUser[u.email?.toLowerCase()] || [];
             const latestShift = userShifts[userShifts.length - 1];
             const clockInTime = latestShift?.clockIn || null;
@@ -146,7 +144,6 @@ export default function OverviewPage() {
               }
             }
 
-            // override absent if clock-in exists
             let finalStatus = status;
             if (clockInTime) {
               const cutoff = new Date();
@@ -165,17 +162,19 @@ export default function OverviewPage() {
           const presentCount = grouped.present.length + grouped.tardy.length;
           const presencePercent = Math.round((presentCount / totalUsers) * 100);
 
-          const avgAttendance =
-            Math.round(
-              detailsWithAttendance.reduce((sum, u) => sum + (u.attendanceScore || 0), 0) / totalUsers
-            ) || 0;
+          const attendancePercent = Math.round((grouped.present.length + grouped.tardy.length) / totalUsers * 100);
+
+const tardinessPercent = Math.round(
+  (grouped.tardy.length / (grouped.present.length + grouped.tardy.length || 1)) * 100
+);
 
           setDailyStats({
             presence: presencePercent,
-            attendance: avgAttendance,
-            tardiness: Math.round(((grouped.tardy.length || 0) / (presentCount || 1)) * 100),
+            attendance: attendancePercent,
+            tardiness: tardinessPercent,
             details: grouped,
           });
+
         }
       } catch (err) {
         console.error("Failed to fetch daily stats", err);
@@ -212,7 +211,7 @@ export default function OverviewPage() {
     if (!selectedUser) {
       return [
         { name: "Presence", value: Math.round(dailyStats.presence) },
-        { name: "Attendance", value: Math.round(dailyStats.attendance) },
+        { name: "Attendance", value: Math.round(dailyStats.attendance) }, // ✅ updated chart
         { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
         { name: "Adherence", value: 92 },
         { name: "Disciplinary Action", value: disciplinaryPercent },
@@ -224,9 +223,9 @@ export default function OverviewPage() {
         );
 
       const presenceVal = userDetail ? 100 : 0;
-      const attendanceVal = userDetail ? userDetail.attendanceScore : 50;
+      const attendanceVal = userDetail ? 100 : 0; // ✅ individual: clocked in = 100%
       const isTardy = dailyStats.details.tardy.some((u) => u.userId === selectedUser.id);
-      const tardinessVal = isTardy ? attendanceVal : 100;
+      const tardinessVal = isTardy ? 50 : 100;
 
       const adherenceVal = 92;
       const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
