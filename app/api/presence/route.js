@@ -3,19 +3,13 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 
-const ATTENDANCE_CUTOFF = process.env.ATTENDANCE_CUTOFF ?? "08:00"; 
-const MAX_USERS = 999;
-const TEAM_ID = process.env.TEAM_ID; // ✅ Make sure this is set in env
+// Config
+const ATTENDANCE_CUTOFF = process.env.ATTENDANCE_CUTOFF ?? "08:00"; // HH:mm (24h), local org time
+const MAX_USERS = 999; // guardrail for /users page size
 
 function isoStartOfToday(tz = undefined) {
   const now = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date();
   now.setHours(0, 0, 0, 0);
-  return now.toISOString();
-}
-
-function isoEndOfToday(tz = undefined) {
-  const now = tz ? new Date(new Date().toLocaleString("en-US", { timeZone: tz })) : new Date();
-  now.setHours(23, 59, 59, 999);
   return now.toISOString();
 }
 
@@ -55,47 +49,16 @@ async function gFetch(token, path, init = {}) {
   return body;
 }
 
-// ✅ New helper: Fetch and filter today's timeCards
-async function fetchClockInsFromTimeCards(token) {
-  if (!TEAM_ID) return {};
-  const startISO = new Date(isoStartOfToday());
-  const endISO = new Date(isoEndOfToday());
-
-  let cards = [];
-  let url = `/teams/${TEAM_ID}/schedule/timeCards`;
-  for (let i = 0; i < 5 && url; i++) {
-    const page = await gFetch(token, url);
-    (page.value || []).forEach(c => cards.push(c));
-    url = page["@odata.nextLink"]
-      ? page["@odata.nextLink"].replace("https://graph.microsoft.com/v1.0", "")
-      : null;
-  }
-
-  const today = {};
-  for (const c of cards) {
-    const ci = c.clockInEvent?.dateTime;
-    if (!ci) continue;
-    const dt = new Date(ci);
-    if (dt >= startISO && dt <= endISO) {
-      today[c.userId] = {
-        clockIn: c.clockInEvent?.dateTime || null,
-        clockOut: c.clockOutEvent?.dateTime || null,
-        workedHours:
-          c.clockInEvent?.dateTime && c.clockOutEvent?.dateTime
-            ? (new Date(c.clockOutEvent.dateTime) - new Date(c.clockInEvent.dateTime)) / 3600000
-            : null,
-      };
-    }
-  }
-  return today;
-}
-
+/**
+ * Compute attendance from sign-ins (premium)
+ */
 async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
   const usersResp = await gFetch(
     token,
     `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle,assignedLicenses&$top=${MAX_USERS}`
   );
   let users = usersResp.value || [];
+
 
   users = users
     .filter((u) => u.accountEnabled !== false)
@@ -128,35 +91,25 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
     }
   }
 
-  const timeCardData = await fetchClockInsFromTimeCards(token); // ✅ fetch clock-ins
-
   let present = 0;
   let onTime = 0;
   const attendanceDetails = [];
 
   for (const u of users) {
     const si = firstByUserId.get(u.id);
-    const tc = timeCardData[u.id];
-
-    if (si || tc) {
+    if (si) {
       present += 1;
-      const firstLoginISO = si?.createdDateTime || tc?.clockIn;
-      const wasOnTime = firstLoginISO
-        ? new Date(firstLoginISO) <= new Date(cutoffISO)
-        : false;
+      const firstLoginISO = si.createdDateTime;
+      const wasOnTime = new Date(firstLoginISO) <= new Date(cutoffISO);
       if (wasOnTime) onTime += 1;
 
       attendanceDetails.push({
         userId: u.id,
         name: u.displayName || u.userPrincipalName || u.mail,
         email: u.mail || u.userPrincipalName,
-        firstLogin: si?.createdDateTime || null,
+        firstLogin: firstLoginISO,
         onTime: wasOnTime,
         status: wasOnTime ? "present" : "tardy",
-        // ✅ new fields from timeCards
-        clockIn: tc?.clockIn || null,
-        clockOut: tc?.clockOut || null,
-        workedHours: tc?.workedHours || null,
       });
     } else {
       attendanceDetails.push({
@@ -166,16 +119,13 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
         firstLogin: null,
         onTime: false,
         status: "absent",
-        clockIn: null,
-        clockOut: null,
-        workedHours: null,
       });
     }
   }
 
   const total = users.length || 0;
   return {
-    source: "auditLogs.signIns + timeCards",
+    source: "auditLogs.signIns",
     supportsTardiness: true,
     cutoff: ATTENDANCE_CUTOFF,
     total,
@@ -187,22 +137,167 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
   };
 }
 
+/**
+ * Compute attendance from presence snapshot (fallback)
+ */
+async function computeFromPresenceSnapshot(token, allowedIds = null) {
+  const usersResp = await gFetch(
+    token,
+    `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle,assignedLicenses&$top=${MAX_USERS}`
+  );
+  let users = (usersResp.value || [])
+    .filter((u) => u.accountEnabled !== false)
+    .filter((u) => (u.assignedLicenses?.length ?? 0) > 0)
+    .filter((u) => u.jobTitle && !u.jobTitle.toLowerCase().includes("chief"));
+
+  if (Array.isArray(allowedIds) && allowedIds.length > 0) {
+    const allowedSet = new Set(allowedIds);
+    users = users.filter((u) => allowedSet.has(u.id));
+  }
+
+  const ids = users.map((u) => u.id);
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 100) chunks.push(ids.slice(i, i + 100));
+
+  const presences = [];
+  for (const batch of chunks) {
+    const body = { ids: batch };
+    try {
+      const p = await gFetch(token, `/communications/getPresencesByUserId`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      (p.value || []).forEach((x) => presences.push(x));
+    } catch (e) {
+      if (e?.status === 403) {
+        return {
+          source: "presence.snapshot",
+          supportsTardiness: false,
+          cutoff: ATTENDANCE_CUTOFF,
+          total: users.length,
+          present: 0,
+          percent: 0,
+          onTime: 0,
+          tardy: 0,
+          details: [],
+          warning:
+            "Missing Presence.Read.All or no Teams license; cannot read presence.",
+        };
+      }
+      throw e;
+    }
+  }
+
+  const presentNowIds = new Set(
+    presences
+      .filter(
+        (p) =>
+          p &&
+          p.availability &&
+          !["offline", "away"].includes(String(p.availability).toLowerCase())
+      )
+      .map((p) => p.id)
+  );
+
+  const details = users.map((u) => {
+    const isPresent = presentNowIds.has(u.id);
+    return {
+      userId: u.id,
+      name: u.displayName || u.userPrincipalName || u.mail,
+      email: u.mail || u.userPrincipalName,
+      presentNow: isPresent,
+      status: isPresent ? "present" : "absent", 
+    };
+  });
+
+  const present = details.filter((d) => d.presentNow).length;
+  const total = users.length;
+
+  return {
+    source: "presence.snapshot",
+    supportsTardiness: false,
+    cutoff: ATTENDANCE_CUTOFF,
+    total,
+    present,
+    percent: total ? Math.round((present / total) * 100) : 0,
+    onTime: 0,
+    tardy: 0,
+    details,
+    note:
+      "Snapshot presence cannot tell who logged in today or who was late. For true attendance/tardiness, enable Entra ID P1/P2 and AuditLog.Read.All or use Teams Shifts timecards.",
+  };
+}
+
+/**
+ * Route handlers
+ */
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.accessToken) {
+    const token = session?.accessToken;
+    if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const cutoffISO = parseCutoffToTodayISO(ATTENDANCE_CUTOFF);
-    const stats = await computeFromSignIns(session.accessToken, cutoffISO);
 
-    return NextResponse.json(stats);
+    try {
+      const fromSignIns = await computeFromSignIns(token, cutoffISO);
+      return NextResponse.json(fromSignIns);
+    } catch (e) {
+      const code = e?.body?.error?.code || e?.body?.code || e?.code || "";
+      const premiumLike =
+        code === "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
+        code === "Authentication_MSGraphPermissionMissing" ||
+        e?.status === 403;
+
+      if (!premiumLike) throw e;
+
+      const snapshot = await computeFromPresenceSnapshot(token);
+      return NextResponse.json(snapshot);
+    }
   } catch (err) {
-    console.error("Presence API error:", err);
+    console.error("presence route error:", err);
     return NextResponse.json(
-      { error: err.message || "Internal Server Error" },
-      { status: err.status || 500 }
+      { error: "Failed to compute attendance", detail: err?.message || String(err) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req) {
+  try {
+    const session = await getServerSession(authOptions);
+    const token = session?.accessToken;
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const allowedIds = Array.isArray(body.ids) ? body.ids : [];
+
+    const cutoffISO = parseCutoffToTodayISO(ATTENDANCE_CUTOFF);
+
+    try {
+      const fromSignIns = await computeFromSignIns(token, cutoffISO, allowedIds);
+      return NextResponse.json(fromSignIns);
+    } catch (e) {
+      const code = e?.body?.error?.code || e?.body?.code || e?.code || "";
+      const premiumLike =
+        code === "Authentication_RequestFromNonPremiumTenantOrB2CTenant" ||
+        code === "Authentication_MSGraphPermissionMissing" ||
+        e?.status === 403;
+
+      if (!premiumLike) throw e;
+
+      const snapshot = await computeFromPresenceSnapshot(token, allowedIds);
+      return NextResponse.json(snapshot);
+    }
+  } catch (err) {
+    console.error("presence POST route error:", err);
+    return NextResponse.json(
+      { error: "Failed to compute attendance", detail: err?.message || String(err) },
+      { status: 500 }
     );
   }
 }
