@@ -164,9 +164,9 @@ export default function OverviewPage() {
 
           const attendancePercent = Math.round((grouped.present.length + grouped.tardy.length) / totalUsers * 100);
 
-const tardinessPercent = Math.round(
-  (grouped.tardy.length / (grouped.present.length + grouped.tardy.length || 1)) * 100
-);
+          const tardinessPercent = Math.round(
+            (grouped.tardy.length / (grouped.present.length + grouped.tardy.length || 1)) * 100
+          );
 
           setDailyStats({
             presence: presencePercent,
