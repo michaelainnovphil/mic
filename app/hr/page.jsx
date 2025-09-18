@@ -116,9 +116,20 @@ export default function OverviewPage() {
         const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
         const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
 
+        // fetch users here so we can mark "absent" = users who did NOT log in today
+        const usersRes = await fetch("/api/users");
+        const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
+        const validUsers = (usersData.value || []).filter(
+          (u) =>
+            u.jobTitle &&
+            u.jobTitle.trim() !== "" &&
+            !u.jobTitle.toLowerCase().includes("chief")
+        );
+
         if (res.ok && data) {
           const grouped = { present: [], tardy: [], absent: [] };
 
+          // build details for users who have presence info
           const detailsWithAttendance = (data.details || []).map((u) => {
             const status = (u.status || "absent").toLowerCase();
             let attendanceScore = 50;
@@ -147,22 +158,49 @@ export default function OverviewPage() {
             let finalStatus = status;
             if (clockInTime) {
               const cutoff = new Date();
-              cutoff.setHours(8, 30, 0, 0);
+              cutoff.setHours(8, 31, 0, 0);
               finalStatus = firstLoginTime <= cutoff ? "present" : "tardy";
             }
 
-            if (finalStatus === "present") grouped.present.push({ ...u, attendanceScore, firstLoginTime });
-            else if (finalStatus === "tardy") grouped.tardy.push({ ...u, attendanceScore, firstLoginTime });
-            else grouped.absent.push({ ...u, attendanceScore, firstLoginTime });
+            const emailLower = (u.email || u.mail || u.userPrincipalName || "").toLowerCase();
+            const userId = u.userId || u.id || emailLower;
 
-            return { ...u, attendanceScore, firstLoginTime, status: finalStatus };
+            if (finalStatus === "present") grouped.present.push({ ...u, attendanceScore, firstLoginTime, userId, email: emailLower });
+            else if (finalStatus === "tardy") grouped.tardy.push({ ...u, attendanceScore, firstLoginTime, userId, email: emailLower });
+            else grouped.absent.push({ ...u, attendanceScore, firstLoginTime, userId, email: emailLower });
+
+            return { ...u, attendanceScore, firstLoginTime, status: finalStatus, userId, email: emailLower };
           });
 
-          const totalUsers = detailsWithAttendance.length || 1;
+          // build a set of emails that did log in / have presence entries today
+          const presentEmails = new Set(
+            (detailsWithAttendance || [])
+              .map((d) => (d.email || d.userPrincipalName || d.mail || "").toLowerCase())
+              .filter(Boolean)
+          );
+
+          // For valid users that are NOT in presentEmails, mark them as absent (didn't log in today)
+          validUsers.forEach((user) => {
+            const email = (user.mail || user.userPrincipalName || "").toLowerCase();
+            if (!email) return; 
+            if (!presentEmails.has(email)) {
+              grouped.absent.push({
+                userId: user.id,
+                name: user.displayName || email,
+                email,
+                attendanceScore: 0,
+                firstLoginTime: null,
+                status: "absent",
+              });
+            }
+          });
+
+          // total users should be the count of valid users (those we care about)
+          const totalUsers = validUsers.length || 1;
           const presentCount = grouped.present.length + grouped.tardy.length;
           const presencePercent = Math.round((presentCount / totalUsers) * 100);
 
-          const attendancePercent = Math.round((grouped.present.length + grouped.tardy.length) / totalUsers * 100);
+          const attendancePercent = Math.round(((grouped.present.length + grouped.tardy.length) / totalUsers) * 100);
 
           const tardinessPercent = Math.round(
             (grouped.tardy.length / (grouped.present.length + grouped.tardy.length || 1)) * 100
@@ -223,7 +261,7 @@ export default function OverviewPage() {
         );
 
       const presenceVal = userDetail ? 100 : 0;
-      const attendanceVal = userDetail ? 100 : 0; // ✅ individual: clocked in = 100%
+      const attendanceVal = userDetail ? 100 : 0; 
       const isTardy = dailyStats.details.tardy.some((u) => u.userId === selectedUser.id);
       const tardinessVal = isTardy ? 50 : 100;
 
@@ -525,7 +563,7 @@ export default function OverviewPage() {
                         <span className="italic text-yellow-700">Tardy</span>
                       </div>
                       <div className="mt-1 text-gray-600">
-                        First login:{" "}
+                        First login: {" "}
                         <span className="font-mono">
                           {u.firstLogin
                             ? new Date(u.firstLogin).toLocaleTimeString([], {
