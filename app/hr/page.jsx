@@ -30,7 +30,6 @@ export default function OverviewPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [disciplinaryRecords, setDisciplinaryRecords] = useState({});
   const [newDA, setNewDA] = useState("");
-  const [showPresenceModal, setShowPresenceModal] = useState(false);
 
   // fetch users and tasks
   useEffect(() => {
@@ -264,7 +263,6 @@ if (!clockInTime) {
   const buildPieData = () => {
     if (!selectedUser) {
       return [
-        { name: "Presence", value: Math.round(dailyStats.presence) },
         { name: "Attendance", value: Math.round(dailyStats.attendance) }, // ✅ updated chart
         { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
         { name: "Adherence", value: 92 },
@@ -286,7 +284,6 @@ if (!clockInTime) {
       const daVal = hasDA ? 0 : 100;
 
       return [
-        { name: "Presence", value: presenceVal },
         { name: "Attendance", value: attendanceVal },
         { name: "Tardiness", value: tardinessVal },
         { name: "Adherence", value: adherenceVal },
@@ -332,49 +329,65 @@ if (!clockInTime) {
 
       <div className="max-w-[90%] mx-auto p-6 space-y-10">
         {/* Daily Averages Pie */}
-        <div className="bg-white shadow rounded-2xl p-6">
-          <h2 className="text-lg font-semibold mb-6">
-            {selectedUser ? `${selectedUser.name}'s Stats` : "Daily Average For Naga/Makati"}
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-            {pieData.map((item) => (
-              <div
-                key={item.name}
-                className="flex flex-col items-center cursor-pointer"
-                onClick={() => {
-                  if (item.name === "Presence") setShowPresenceModal(true);
-                  if (item.name === "Attendance") setShowAttendanceModal(true);
-                  if (item.name === "Tardiness") setShowTardinessModal(true);
-                  if (item.name === "Disciplinary Action") setShowDAModal(true);
-                }}
+<div className="bg-white shadow rounded-2xl p-6">
+  <div className="flex justify-between items-center mb-6">
+    <h2 className="text-lg font-semibold">
+      {selectedUser
+        ? `${selectedUser.name}'s Stats`
+        : "Daily Average For Naga/Makati"}
+    </h2>
+
+    {selectedUser && (
+      <button
+        onClick={() => setSelectedUser(null)}
+        className="ml-4 rounded-md bg-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-300"
+      >
+        Reset
+      </button>
+    )}
+  </div>
+
+  <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+    {pieData.map((item) => (
+      <div
+        key={item.name}
+        className="flex flex-col items-center cursor-pointer group"
+        onClick={() => {
+          if (item.name === "Attendance") setShowAttendanceModal(true);
+          if (item.name === "Tardiness") setShowTardinessModal(true);
+          if (item.name === "Disciplinary Action") setShowDAModal(true);
+        }}
+      >
+        <div className="relative w-28 h-28 transition-transform duration-200 group-hover:scale-105">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={[
+                  { name: "Completed", value: item.value },
+                  { name: "Remaining", value: 100 - item.value },
+                ]}
+                innerRadius={40}
+                outerRadius={55}
+                paddingAngle={2}
+                dataKey="value"
               >
-                <div className="relative w-28 h-28">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: "Completed", value: item.value },
-                          { name: "Remaining", value: 100 - item.value },
-                        ]}
-                        innerRadius={40}
-                        outerRadius={55}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        <Cell fill="#1EB1D6" />
-                        <Cell fill="#E5E7EB" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
-                    {item.value}%
-                  </span>
-                </div>
-                <span className="mt-3 text-sm font-medium">{item.name}</span>
-              </div>
-            ))}
-          </div>
+                <Cell fill="#0a1f8f" />
+                <Cell fill="#E5E7EB" />
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <span className="absolute inset-0 flex items-center justify-center text-base font-bold text-gray-700">
+            {item.value}%
+          </span>
         </div>
+        <span className="mt-3 text-sm font-medium text-gray-700">
+          {item.name}
+        </span>
+      </div>
+    ))}
+  </div>
+</div>
+
 
         {/* Department Dropdowns */}
         <div className="bg-white shadow rounded-2xl p-6">
@@ -432,56 +445,7 @@ if (!clockInTime) {
           </div>
         </div>
 
-        {/* Presence Modal */}
-        <Dialog
-          open={showPresenceModal}
-          onClose={() => setShowPresenceModal(false)}
-          className="relative z-50"
-        >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-2xl rounded-2xl bg-white p-6 shadow-xl w-full">
-              <Dialog.Title className="text-lg font-semibold">
-                Presence Details
-              </Dialog.Title>
-              <p className="mt-2 text-sm text-gray-600">
-                {dailyStats.presence}% online
-              </p>
-
-              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-                {Object.entries(dailyStats.details).map(([status, members]) =>
-                  members.length > 0 ? (
-                    <div key={status}>
-                      <h4 className="capitalize font-medium text-gray-700 mb-1">
-                        {status} ({members.length})
-                      </h4>
-                      <ul className="space-y-1">
-                        {members.map((u) => (
-                          <li
-                            key={u.userId}
-                            className="flex justify-between text-sm p-2 rounded bg-gray-100"
-                          >
-                            <span>{u.name}</span>
-                            <span className="italic">{u.status}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null
-                )}
-              </div>
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setShowPresenceModal(false)}
-                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-                >
-                  Close
-                </button>
-              </div>
-            </Dialog.Panel>
-          </div>
-        </Dialog>
+        
 
         {/* Attendance Modal */}
         <Dialog
