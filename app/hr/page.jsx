@@ -156,11 +156,27 @@ export default function OverviewPage() {
             }
 
             let finalStatus = status;
-            if (clockInTime) {
-              const cutoff = new Date();
-              cutoff.setHours(8, 31, 0, 0);
-              finalStatus = firstLoginTime <= cutoff ? "present" : "tardy";
-            }
+            const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+if (!clockInTime) {
+  // no clock-in today → absent
+  finalStatus = "absent";
+} else {
+  const clockInDate = new Date(clockInTime);
+  const sameDay =
+    clockInDate.getFullYear() === today.getFullYear() &&
+    clockInDate.getMonth() === today.getMonth() &&
+    clockInDate.getDate() === today.getDate();
+
+  if (!sameDay) {
+    finalStatus = "absent";
+  } else {
+    const cutoff = new Date();
+    cutoff.setHours(8, 31, 0, 0);
+    finalStatus = firstLoginTime <= cutoff ? "present" : "tardy";
+  }
+}
 
             const emailLower = (u.email || u.mail || u.userPrincipalName || "").toLowerCase();
             const userId = u.userId || u.id || emailLower;
@@ -202,9 +218,9 @@ export default function OverviewPage() {
 
           const attendancePercent = Math.round(((grouped.present.length + grouped.tardy.length) / totalUsers) * 100);
 
-          const tardinessPercent = Math.round(
-            (grouped.tardy.length / (grouped.present.length + grouped.tardy.length || 1)) * 100
-          );
+          const tardinessPercent =
+            Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100);
+
 
           setDailyStats({
             presence: presencePercent,
