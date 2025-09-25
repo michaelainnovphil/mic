@@ -227,7 +227,7 @@ useEffect(() => {
         const tardinessPercent =
           Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100);
 
-        // ✅ adherence calc
+       
         let adherenceSum = 0;
         let adherenceUsers = 0;
 
@@ -283,9 +283,9 @@ useEffect(() => {
   const buildPieData = () => {
   if (!selectedUser) {
     return [
-      { name: "Attendance", value: Math.round(dailyStats.attendance || 0) }, 
-      { name: "Tardiness", value: Math.round(dailyStats.tardiness || 0) },
-      { name: "Adherence", value: Math.round(dailyStats.adherence || 0) },
+      { name: "Attendance", value: Math.round(dailyStats.attendance || 100) }, 
+      { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
+      { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
       { name: "Disciplinary Action", value: disciplinaryPercent },
     ];
   } else {
@@ -347,6 +347,43 @@ useEffect(() => {
     if (!groupedByDept[dept]) groupedByDept[dept] = [];
     groupedByDept[dept].push(u);
   });
+
+
+// Refresh DA from backend
+const refreshDA = async () => {
+  try {
+    const res = await fetch("/api/disciplinary");
+    if (!res.ok) throw new Error("Failed to fetch");
+    const data = await res.json();
+    setDisciplinaryRecords(data || {});
+  } catch (err) {
+    console.error("refreshDA error", err);
+  }
+};
+
+const handleDeleteDA = async (id) => {
+  if (!id) return;
+  const ok = window.confirm("Remove this disciplinary action?");
+  if (!ok) return;
+
+  try {
+    const res = await fetch("/api/disciplinary", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) throw new Error("Delete failed " + res.status);
+
+    await refreshDA(); // refetch DAs after delete
+  } catch (err) {
+    console.error("handleDeleteDA error", err);
+    alert("Failed to delete disciplinary action — please try again.");
+  }
+};
+
+
+
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -636,7 +673,7 @@ useEffect(() => {
         </ul>
       ) : (
         <p className="mt-2 text-sm text-gray-500">
-          No employees exceeded the 75-minute break limit
+          No employees exceeded the break limit
         </p>
       )}
 
@@ -654,55 +691,123 @@ useEffect(() => {
 
 
         {/* Disciplinary Modal */}
-        <Dialog
-          open={showDAModal}
-          onClose={() => setShowDAModal(false)}
-          className="relative z-50"
+<Dialog
+  open={showDAModal}
+  onClose={() => setShowDAModal(false)}
+  className="relative z-50"
+>
+  {/* Overlay */}
+  <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" aria-hidden="true" />
+
+  {/* Modal Panel */}
+  <div className="fixed inset-0 flex items-center justify-center p-4">
+    <Dialog.Panel className="mx-auto max-w-lg w-full rounded-2xl bg-white shadow-xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <Dialog.Title className="text-lg font-semibold text-gray-800">
+          Disciplinary Action
+        </Dialog.Title>
+        <button
+          onClick={() => setShowDAModal(false)}
+          className="text-gray-400 hover:text-gray-600 transition"
         >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-              <Dialog.Title className="text-lg font-semibold">
-                Disciplinary Action
-              </Dialog.Title>
-              {selectedUser && (
-                <p className="mt-2 text-sm text-gray-600">
-                  For {selectedUser.name}
-                </p>
-              )}
-              {selectedUser && disciplinaryRecords[selectedUser.id]?.length > 0 && (
-                <ul className="mt-2 list-disc pl-5 text-sm text-gray-600">
-                  {disciplinaryRecords[selectedUser.id].map((d, idx) => (
-                    <li key={idx}>{d}</li>
-                  ))}
-                </ul>
-              )}
+          ✕
+        </button>
+      </div>
 
-              <input
-                type="text"
-                value={newDA}
-                onChange={(e) => setNewDA(e.target.value)}
-                placeholder="Enter action"
-                className="mt-4 w-full rounded border px-3 py-2"
-              />
+      {/* Body */}
+      <div className="p-6 max-h-96 overflow-y-auto">
+        {selectedUser ? (
+          <>
+            <p className="text-sm text-gray-500 mb-4">
+              Actions for <span className="font-medium text-gray-800">{selectedUser.name}</span>
+            </p>
 
-              <div className="mt-4 flex justify-end space-x-2">
-                <button
-                  onClick={() => setShowDAModal(false)}
-                  className="rounded-md bg-gray-300 px-4 py-2 hover:bg-gray-400"
+            {disciplinaryRecords[selectedUser.id]?.length > 0 ? (
+              <ul className="space-y-2">
+                {disciplinaryRecords[selectedUser.id].map((d) => (
+                  <li
+                    key={d._id}
+                    className="flex justify-between items-center rounded-xl bg-gray-50 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
+                  >
+                    <span>{d.action}</span>
+                    <button
+                      onClick={() => handleDeleteDA(d._id)}
+                      className="text-red-500 hover:text-red-600 text-xs font-medium"
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-400 italic">No records yet</p>
+            )}
+          </>
+        ) : (
+          /* All employees with DA */
+          <div className="space-y-4">
+            {Object.entries(disciplinaryRecords).length > 0 ? (
+              Object.entries(disciplinaryRecords).map(([userId, actions]) => (
+                <div
+                  key={userId}
+                  className="rounded-xl bg-gray-50 p-4 shadow-sm"
                 >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleAddDA}
-                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-                >
-                  Save
-                </button>
-              </div>
-            </Dialog.Panel>
+                  <p className="font-medium text-gray-800 mb-2">
+                    {users.find((u) => u.id === userId)?.name || userId}
+                  </p>
+                  <ul className="space-y-1 text-sm text-gray-600">
+                    {actions.map((d) => (
+                      <li
+                        key={d._id}
+                        className="flex justify-between items-center bg-white rounded-lg px-3 py-2 hover:bg-gray-50 transition"
+                      >
+                        <span>{d.action}</span>
+                        <button
+                          onClick={() => handleDeleteDA(d._id)}
+                          className="text-red-500 hover:text-red-600 text-xs font-medium"
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-400 italic">No disciplinary actions recorded</p>
+            )}
           </div>
-        </Dialog>
+        )}
+      </div>
+
+      {/* Footer (Add New DA) */}
+      {selectedUser && (
+        <div className="border-t border-gray-100 px-6 py-4 bg-gray-50 flex gap-2">
+          <input
+            type="text"
+            value={newDA}
+            onChange={(e) => setNewDA(e.target.value)}
+            placeholder="Enter new action"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+          <button
+            onClick={handleAddDA}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 transition"
+          >
+            Add
+          </button>
+        </div>
+      )}
+    </Dialog.Panel>
+  </div>
+</Dialog>
+
+
+
+
+
+
       </div>
     </div>
   );
