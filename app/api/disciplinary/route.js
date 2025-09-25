@@ -9,7 +9,7 @@ export async function GET() {
 
     const records = await DisciplinaryAction.find().lean();
 
-    // Group by userId
+    // Group by userId and keep _id + action
     const grouped = {};
     records.forEach((rec) => {
       if (!grouped[rec.userId]) grouped[rec.userId] = [];
@@ -19,13 +19,7 @@ export async function GET() {
       });
     });
 
-    // Convert object -> array
-    const result = Object.entries(grouped).map(([userId, actions]) => ({
-      userId,
-      actions,
-    }));
-
-    return NextResponse.json(result, { status: 200 });
+    return NextResponse.json(grouped, { status: 200 });
   } catch (err) {
     console.error("Error fetching DA:", err);
     return NextResponse.json(

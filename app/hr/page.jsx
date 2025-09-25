@@ -480,12 +480,13 @@ const handleDeleteDA = async (id) => {
                                 {Math.round(u.percentage)}% tasks
                               </span>
                               {disciplinaryRecords[u.id] && (
-                                <ul className="ml-4 list-disc text-gray-600">
-                                  {disciplinaryRecords[u.id].map((d, idx) => (
-                                    <li key={idx}>{d}</li>
-                                  ))}
-                                </ul>
-                              )}
+                              <ul className="ml-4 list-disc text-gray-600">
+                                {disciplinaryRecords[u.id].map((d) => (
+                                  <li key={d._id}>{d.action}</li>
+                                ))}
+                              </ul>
+                            )}
+
                             </div>
                             <button
                               onClick={(e) => {
