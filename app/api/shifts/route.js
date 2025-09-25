@@ -164,7 +164,6 @@ export async function GET() {
               ? new Date(tc.clockOutEvent.dateTime)
               : null;
 
-            
             if (
               clockIn &&
               (clockIn < monthStart || clockIn >= nextMonthStart)
@@ -172,9 +171,23 @@ export async function GET() {
               return; // skip this timecard
             }
 
+            // ✅ Calculate breaks
+            let totalBreakMinutes = 0;
+            if (Array.isArray(tc.breaks)) {
+              tc.breaks.forEach((b) => {
+                const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
+                const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
+                if (bs && be) {
+                  totalBreakMinutes += (be - bs) / (1000 * 60);
+                }
+              });
+            }
+
+            // Compute worked hours
             let workedHours = null;
             if (clockIn && clockOut) {
               workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
+              workedHours -= totalBreakMinutes / 60; // subtract breaks
             }
 
             shiftDetailsPerUser[userId].push({
@@ -182,6 +195,7 @@ export async function GET() {
               clockIn: clockIn ? clockIn.toISOString() : null,
               clockOut: clockOut ? clockOut.toISOString() : null,
               workedHours,
+              breakMinutes: totalBreakMinutes,
             });
           });
         } else {
@@ -191,6 +205,7 @@ export async function GET() {
             clockIn: null,
             clockOut: null,
             workedHours: null,
+            breakMinutes: 0,
           });
         }
       }
