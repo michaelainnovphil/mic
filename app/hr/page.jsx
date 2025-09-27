@@ -117,7 +117,7 @@ useEffect(() => {
       const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
       const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
 
-      // fetch users here so we can mark "absent" = users who did NOT log in today
+      // fetch all users to ensure absent users are included
       const usersRes = await fetch("/api/users");
       const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
       const validUsers = (usersData.value || []).filter(
@@ -130,77 +130,80 @@ useEffect(() => {
       if (res.ok && data) {
         const grouped = { present: [], tardy: [], absent: [] };
 
-        // build details for users who have presence info
-        const detailsWithAttendance = (data.details || []).map((u) => {
-          const status = (u.status || "absent").toLowerCase();
-          let attendanceScore = 50;
-          let firstLoginTime = null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
-          const userShifts = shiftDetailsPerUser[u.email?.toLowerCase()] || [];
+        // details from presence + shifts
+        const detailsWithAttendance = (data.details || []).map((u) => {
+          const emailLower = (u.email || u.mail || u.userPrincipalName || "").toLowerCase();
+          const userId = u.userId || u.id || emailLower;
+
+          const userShifts = shiftDetailsPerUser[emailLower] || [];
           const latestShift = userShifts[userShifts.length - 1];
           const clockInTime = latestShift?.clockIn || null;
           const breakMinutes = latestShift?.breakMinutes ?? 0;
 
-          if (u.firstLogin || clockInTime) {
-            firstLoginTime = new Date(u.firstLogin || clockInTime);
-            const cutoff = new Date(firstLoginTime);
-            cutoff.setHours(8, 30, 0, 0);
+          // use either presence firstLogin OR shift clockIn
+          const firstLoginTime = u.firstLogin
+            ? new Date(u.firstLogin)
+            : clockInTime
+            ? new Date(clockInTime)
+            : null;
 
-            if (firstLoginTime <= cutoff) {
-              attendanceScore = 100;
-            } else {
-              const diffMins = Math.floor((firstLoginTime - cutoff) / 60000);
-              if (diffMins <= 5) attendanceScore = 95;
-              else if (diffMins <= 10) attendanceScore = 90;
-              else if (diffMins <= 15) attendanceScore = 85;
-              else attendanceScore = 50;
-            }
-          }
+          let attendanceScore = 50;
+          let finalStatus = "absent";
 
-          let finalStatus = status;
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
+          if (firstLoginTime) {
+  // cutoff for today 8:30 AM
+  const cutoff = new Date();
+  cutoff.setHours(8, 30, 0, 0);
 
-          if (!clockInTime) {
-            // no clock-in today → absent
-            finalStatus = "absent";
-          } else {
-            const clockInDate = new Date(clockInTime);
-            const sameDay =
-              clockInDate.getFullYear() === today.getFullYear() &&
-              clockInDate.getMonth() === today.getMonth() &&
-              clockInDate.getDate() === today.getDate();
+  if (firstLoginTime <= cutoff) {
+    attendanceScore = 100;
+  } else {
+    const diffMins = Math.floor((firstLoginTime - cutoff) / 60000);
+    if (diffMins <= 5) attendanceScore = 95;
+    else if (diffMins <= 10) attendanceScore = 90;
+    else if (diffMins <= 15) attendanceScore = 85;
+    else attendanceScore = 50;
+  }
 
-            if (!sameDay) {
-              finalStatus = "absent";
-            } else {
-              const cutoff = new Date();
-              cutoff.setHours(8, 31, 0, 0);
-              finalStatus = firstLoginTime <= cutoff ? "present" : "tardy";
-            }
-          }
+  const sameDay =
+    firstLoginTime.getFullYear() === today.getFullYear() &&
+    firstLoginTime.getMonth() === today.getMonth() &&
+    firstLoginTime.getDate() === today.getDate();
 
-          const emailLower = (u.email || u.mail || u.userPrincipalName || "").toLowerCase();
-          const userId = u.userId || u.id || emailLower;
+  if (sameDay) {
+    const cutoffStatus = new Date();
+    cutoffStatus.setHours(8, 31, 0, 0);
+    finalStatus = firstLoginTime <= cutoffStatus ? "present" : "tardy";
+  }
+}
 
-          if (finalStatus === "present")
-            grouped.present.push({ ...u, attendanceScore, firstLoginTime, userId, email: emailLower, breakMinutes });
-          else if (finalStatus === "tardy")
-            grouped.tardy.push({ ...u, attendanceScore, firstLoginTime, userId, email: emailLower, breakMinutes });
-          else
-            grouped.absent.push({ ...u, attendanceScore, firstLoginTime, userId, email: emailLower, breakMinutes });
 
-          return { ...u, attendanceScore, firstLoginTime, status: finalStatus, userId, email: emailLower, breakMinutes };
+          const detail = {
+            ...u,
+            attendanceScore,
+            firstLoginTime,
+            status: finalStatus,
+            userId,
+            email: emailLower,
+            breakMinutes,
+          };
+
+          if (finalStatus === "present") grouped.present.push(detail);
+          else if (finalStatus === "tardy") grouped.tardy.push(detail);
+          else grouped.absent.push(detail);
+
+          return detail;
         });
 
-        // build a set of emails that did log in / have presence entries today
+        // track who already has presence/shift data
         const presentEmails = new Set(
-          (detailsWithAttendance || [])
-            .map((d) => (d.email || d.userPrincipalName || d.mail || "").toLowerCase())
-            .filter(Boolean)
+          detailsWithAttendance.map((d) => d.email).filter(Boolean)
         );
 
-        // For valid users that are NOT in presentEmails, mark them as absent (didn't log in today)
+        // ensure all valid users are included
         validUsers.forEach((user) => {
           const email = (user.mail || user.userPrincipalName || "").toLowerCase();
           if (!email) return;
@@ -217,20 +220,16 @@ useEffect(() => {
           }
         });
 
-        // total users should be the count of valid users (those we care about)
-        const totalUsers = validUsers.length || 1;
+        const totalUsers = grouped.present.length + grouped.tardy.length + grouped.absent.length;
         const presentCount = grouped.present.length + grouped.tardy.length;
-        const presencePercent = Math.round((presentCount / totalUsers) * 100);
 
-        const attendancePercent = Math.round(((grouped.present.length + grouped.tardy.length) / totalUsers) * 100);
+        const attendancePercent = totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
+        const tardinessPercent = presentCount > 0
+          ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
+          : 0;
 
-        const tardinessPercent =
-          Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100);
-
-       
         let adherenceSum = 0;
         let adherenceUsers = 0;
-
         [...grouped.present, ...grouped.tardy].forEach((u) => {
           adherenceUsers++;
           adherenceSum += u.breakMinutes > 75 ? 50 : 100;
@@ -241,7 +240,7 @@ useEffect(() => {
           : 0;
 
         setDailyStats({
-          presence: presencePercent,
+          presence: attendancePercent,
           attendance: attendancePercent,
           tardiness: tardinessPercent,
           adherence: adherencePercent,
@@ -255,6 +254,7 @@ useEffect(() => {
 
   fetchDailyStats();
 }, []);
+
 
 
   // fetch disciplinary actions
@@ -512,75 +512,77 @@ const handleDeleteDA = async (id) => {
         
 
         {/* Attendance Modal */}
-        <Dialog
-          open={showAttendanceModal}
-          onClose={() => setShowAttendanceModal(false)}
-          className="relative z-50"
-        >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-              <Dialog.Title className="text-lg font-semibold">
-                Attendance
-              </Dialog.Title>
+<Dialog
+  open={showAttendanceModal}
+  onClose={() => setShowAttendanceModal(false)}
+  className="relative z-50"
+>
+  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+  <div className="fixed inset-0 flex items-center justify-center p-4">
+    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
+      <Dialog.Title className="text-lg font-semibold text-gray-800">
+        Attendance
+      </Dialog.Title>
 
-              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-                {/* Present Employees */}
-                {dailyStats.details.present?.length > 0 ? (
-                  <div>
-                    <h4 className="font-medium text-green-600 mb-2">
-                      Present ({dailyStats.details.present.length})
-                    </h4>
-                    <ul className="space-y-1">
-                      {dailyStats.details.present.map((u) => (
-                        <li
-                          key={u.userId}
-                          className="flex justify-between text-sm p-2 rounded bg-green-50 border border-green-200"
-                        >
-                          <span>{u.name}</span>
-                          <span className="italic text-green-700">Present</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No present employees</p>
-                )}
-
-                {/* Absent Employees */}
-                {dailyStats.details.absent?.length > 0 ? (
-                  <div>
-                    <h4 className="font-medium text-red-600 mb-2">
-                      Absent ({dailyStats.details.absent.length})
-                    </h4>
-                    <ul className="space-y-1">
-                      {dailyStats.details.absent.map((u) => (
-                        <li
-                          key={u.userId}
-                          className="flex justify-between text-sm p-2 rounded bg-red-50 border border-red-200"
-                        >
-                          <span>{u.name}</span>
-                          <span className="italic text-red-700">Absent</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No absent employees</p>
-                )}
-              </div>
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setShowAttendanceModal(false)}
-                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+      <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
+        {/* Present + Tardy Employees */}
+        {[...dailyStats.details.present, ...dailyStats.details.tardy].length > 0 ? (
+          <div>
+            <h4 className="font-medium text-green-600 mb-2">
+              Present (
+              {dailyStats.details.present.length + dailyStats.details.tardy.length}
+              )
+            </h4>
+            <ul className="space-y-1">
+              {[...dailyStats.details.present, ...dailyStats.details.tardy].map((u) => (
+                <li
+                  key={u.userId}
+                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-green-50 border border-green-200"
                 >
-                  Close
-                </button>
-              </div>
-            </Dialog.Panel>
+                  <span className="font-medium text-gray-700">{u.name}</span>
+                  <span
+                    className={
+                      dailyStats.details.tardy.some((t) => t.userId === u.userId)
+                        ? "italic text-yellow-600"
+                        : "italic text-green-700"
+                    }
+                  >
+                    {dailyStats.details.tardy.some((t) => t.userId === u.userId)
+                      ? "Tardy"
+                      : "Present"}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
-        </Dialog>
+        ) : (
+          <p className="text-sm text-gray-500">No present employees</p>
+        )}
+
+        {/* Absent Employees */}
+        {dailyStats.details.absent?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-red-600 mb-2">
+              Absent ({dailyStats.details.absent.length})
+            </h4>
+            <ul className="space-y-1">
+              {dailyStats.details.absent.map((u) => (
+                <li
+                  key={u.userId}
+                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-red-50 border border-red-200"
+                >
+                  <span className="font-medium text-gray-700">{u.name}</span>
+                  <span className="italic text-red-700">Absent</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Dialog.Panel>
+  </div>
+</Dialog>
+
 
         {/* Tardiness Modal */}
         <Dialog
@@ -607,16 +609,18 @@ const handleDeleteDA = async (id) => {
                         <span className="italic text-yellow-700">Tardy</span>
                       </div>
                       <div className="mt-1 text-gray-600">
-                        First login: {" "}
-                        <span className="font-mono">
-                          {u.firstLogin
-                            ? new Date(u.firstLogin).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "N/A"}
-                        </span>
-                      </div>
+  First login:{" "}
+  <span className="font-mono">
+    {u.firstLoginTime
+      ? new Date(u.firstLoginTime).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "N/A"}
+  </span>
+</div>
+
+
                     </li>
                   ))}
                 </ul>
