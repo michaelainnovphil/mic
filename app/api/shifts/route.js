@@ -138,6 +138,8 @@ export async function GET() {
 
       const s = new Date(start);
       const e = new Date(end);
+      const isRestDay = /rest\s*day/i.test(note);
+      const isLeave = /leave/i.test(note);
 
       if (s >= monthStart && s < nextMonthStart) {
         const scheduledHours = (e - s) / (1000 * 60 * 60);
@@ -152,6 +154,8 @@ export async function GET() {
           end: e.toISOString(),
           scheduledHours,
           note: shift.sharedShift?.notes || shift.displayName || "",
+          isLeave,
+          isRestDay,
         };
 
         // Merge in timeCards if available
@@ -171,7 +175,7 @@ export async function GET() {
               return; // skip this timecard
             }
 
-            // ✅ Calculate breaks
+            // 
             let totalBreakMinutes = 0;
             if (Array.isArray(tc.breaks)) {
               tc.breaks.forEach((b) => {

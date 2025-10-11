@@ -45,34 +45,34 @@ export default function TaskTimerWidget() {
   };
 
   const exportLogsToExcel = async () => {
-  if (!logsRef.current || logsRef.current.length === 0) {
-    alert("No task logs to export.");
-    return;
-  }
+    if (!logsRef.current || logsRef.current.length === 0) {
+      alert("No task logs to export.");
+      return;
+    }
 
-  const today = new Date();
-  const formattedDate = today.toISOString().split("T")[0];
+    const today = new Date();
+    const formattedDate = today.toISOString().split("T")[0];
 
-  const wsData = [["Date", "Task", "Description", "Type", "Duration (hh:mm:ss)"]];
-  logsRef.current.forEach((log) => {
-    wsData.push([
-      formattedDate,
-      log.task || "",
-      log.description || "",
-      log.taskType || "",
-      formatTime(log.durationSeconds || 0),
-    ]);
-  });
+    const wsData = [["Date", "Task", "Description", "Type", "Productive", "Duration (hh:mm:ss)"]];
+    logsRef.current.forEach((log) => {
+      wsData.push([
+        formattedDate,
+        log.task || "",
+        log.description || "",
+        log.taskType || "",
+        log.isProductive ? "Yes" : "No",
+        formatTime(log.durationSeconds || 0),
+      ]);
+    });
 
-  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
-  XLSX.writeFile(workbook, "task_logs.xlsx");
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Task Logs");
 
-  // ✅ Also upload logs to DB so dashboard sees them
-  await uploadLogsToDatabase();
-};
+    XLSX.writeFile(workbook, `task_logs_${formattedDate}.xlsx`);
 
+    await uploadLogsToDatabase();
+  };
 
   const uploadLogsToDatabase = async () => {
     if (!logsRef.current || logsRef.current.length === 0) return;
@@ -83,10 +83,11 @@ export default function TaskTimerWidget() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            user: logEntry.email || "unknown",
+            user: Array.isArray(logEntry.email) ? logEntry.email[0] : logEntry.email || "unknown",
             task: logEntry.task || "Untitled Task",
-            duration: logEntry.durationSeconds || 0,
+            durationSeconds: logEntry.durationSeconds || 0,
             taskType: logEntry.taskType || "",
+            isProductive: logEntry.isProductive || false, 
             description: logEntry.description || "",
             timestamp: logEntry.timestamp ? new Date(logEntry.timestamp) : new Date(),
             taskId: logEntry.taskId || null,
@@ -96,7 +97,9 @@ export default function TaskTimerWidget() {
         console.error("Failed to save log to DB:", err);
       }
     }
-
+    setVisible(false);
+    setTask(null);
+    setTaskType("");
     logsRef.current = [];
   };
 
@@ -111,6 +114,7 @@ export default function TaskTimerWidget() {
     const logEntry = {
       task: prevTaskRef.current.title,
       taskType: prevTaskRef.current.type || "",
+      isProductive: prevTaskRef.current.type === "Productivity Hours", 
       description: prevTaskRef.current.description || "",
       durationSeconds,
       email: prevTaskRef.current.assignedTo || "unknown",
@@ -121,15 +125,16 @@ export default function TaskTimerWidget() {
     logsRef.current.push(logEntry);
 
     try {
-      // ✅ Save log + increment task duration in DB
+      // Save log + increment task duration in DB
       await fetch("/api/task-log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user: logEntry.email || "unknown",
+          user: Array.isArray(logEntry.email) ? logEntry.email[0] : logEntry.email || "unknown",
           task: logEntry.task || "Untitled Task",
-          duration: logEntry.durationSeconds || 0,
+          durationSeconds: logEntry.durationSeconds || 0,
           taskType: logEntry.taskType || "",
+          isProductive: logEntry.isProductive || false, 
           description: logEntry.description || "",
           timestamp: logEntry.timestamp ? new Date(logEntry.timestamp) : new Date(),
           taskId: logEntry.taskId || null,
@@ -177,6 +182,8 @@ export default function TaskTimerWidget() {
         assignedTo: newTask.assignedTo || "unknown",
         startTime: new Date(),
       };
+      startShiftTimer();
+
     };
 
     window.addEventListener("storage", handleStorage);
@@ -234,11 +241,14 @@ export default function TaskTimerWidget() {
 
         <div className="flex gap-2">
           <button
-            onClick={handleStopTask}
-            className="flex-1 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-          >
-            Stop Task
-          </button>
+  onClick={handleStopTask}
+  disabled={!prevTaskRef.current}
+  className={`flex-1 px-4 py-2 rounded text-white ${
+    prevTaskRef.current ? "bg-red-500 hover:bg-red-600" : "bg-gray-300 cursor-not-allowed"
+  }`}
+>
+  Stop Task
+</button>
           <button
             onClick={stopShift}
             className="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"

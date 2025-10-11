@@ -13,6 +13,14 @@ import { Dialog, Disclosure } from "@headlessui/react";
 import { ChevronUpIcon } from "lucide-react";
 import { TEAM_MAP } from "@/lib/teamMap";
 
+const allowedUsers = [
+  "mdbarreda@innovphil.com",
+  "smbernardo@innovphil.com",
+  "carce@innovphil.com",
+  "aarce@innovphil.com",
+  "jlolfindo@innovphil.com",
+];
+
 export default function OverviewPage() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);

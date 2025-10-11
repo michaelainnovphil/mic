@@ -10,6 +10,7 @@ export default function UserList() {
   const [groupedUsers, setGroupedUsers] = useState({});
   const [shiftStats, setShiftStats] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
+  const [kpiData, setKpiData] = useState(null);
 
   useEffect(() => {
     async function fetchUserStats() {
@@ -98,36 +99,84 @@ export default function UserList() {
     fetchUserStats();
   }, []);
 
+  useEffect(() => {
+    async function fetchKPI() {
+      try {
+        const month = "10"; // You can make this dynamic
+        const year = "2025";
+        const res = await fetch(`/api/kpi?month=${month}&year=${year}`);
+        const data = await res.json();
+        setKpiData(data);
+      } catch (err) {
+        setKpiData(null);
+      }
+    }
+    fetchKPI();
+  }, []);
+
+  // Helper to get KPI for a user
+  function getUserKPI(email) {
+    if (!kpiData || !kpiData.users) return null;
+    return kpiData.users.find(
+      (u) => u.email === email
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="max-w-6xl mx-auto p-6">
+        {/* Show overall KPI */}
+        {kpiData && kpiData.overall && (
+          <div className="mb-8 bg-white rounded-xl shadow p-4">
+            <h3 className="text-lg font-semibold mb-2 text-blue-900">Overall KPI</h3>
+            <ul className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              {Object.entries(kpiData.overall).map(([key, value]) => (
+                <li key={key} className="font-medium text-gray-700">
+                  {key}: <span className="font-bold">{value}%</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Our Team</h2>
 
         {chiefs.length > 0 && (
           <div className="mb-12">
             <h3 className="text-xl font-semibold text-blue-900 mb-4">Stakeholders</h3>
             <div className="flex flex-wrap gap-4">
-              {chiefs.map((user) => (
-                <div
-                  key={user.id}
-                  onClick={() => setSelectedUser(user)}
-                  className="bg-white rounded-2xl shadow p-4 w-64 hover:shadow-md transition cursor-pointer"
-                >
-                  <img
-                    src={user.photo}
-                    alt={user.displayName}
-                    style={{ width: 48, height: 48, borderRadius: "50%" }}
-                  />
-                  <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                    {user.displayName}
-                  </h4>
-                  <p className="text-gray-600 text-sm">
-                    {user.mail || user.userPrincipalName}
-                  </p>
-                  <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
-                </div>
-              ))}
+              {chiefs.map((user) => {
+                const email = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
+                const userKPI = getUserKPI(email);
+                return (
+                  <div
+                    key={user.id}
+                    onClick={() => setSelectedUser(user)}
+                    className="bg-white rounded-2xl shadow p-4 w-64 hover:shadow-md transition cursor-pointer"
+                  >
+                    <img
+                      src={user.photo}
+                      alt={user.displayName}
+                      style={{ width: 48, height: 48, borderRadius: "50%" }}
+                    />
+                    <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                      {user.displayName}
+                    </h4>
+                    <p className="text-gray-600 text-sm">
+                      {user.mail || user.userPrincipalName}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
+                    {/* KPI display */}
+                    {userKPI && (
+                      <div className="mt-2 text-xs text-blue-900">
+                        Attendance: {userKPI.attendance}%<br />
+                        Tardiness: {userKPI.tardiness}%<br />
+                        Utilization: {userKPI.utilizationScore}%
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -143,29 +192,40 @@ export default function UserList() {
                 <div className="space-y-6">
                   {Array.from({ length: Math.ceil(users.length / 2) }).map((_, i) => (
                     <div key={i} className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                      {users.slice(i * 2, i * 2 + 2).map((user) => (
-                        <div
-                          key={user.id}
-                          onClick={() => setSelectedUser(user)}
-                          className="bg-white rounded-2xl shadow p-6 hover:shadow-md transition flex justify-between items-start gap-4 cursor-pointer"
-                        >
-                          <div>
-                            <img
-                              src={user.photo}
-                              alt={user.displayName}
-                              style={{ width: 48, height: 48, borderRadius: "50%" }}
-                            />
-
-                            <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                              {user.displayName}
-                            </h4>
-                            <p className="text-gray-600 text-sm">
-                              {user.mail || user.userPrincipalName}
-                            </p>
-                            <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
+                      {users.slice(i * 2, i * 2 + 2).map((user) => {
+                        const email = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
+                        const userKPI = getUserKPI(email);
+                        return (
+                          <div
+                            key={user.id}
+                            onClick={() => setSelectedUser(user)}
+                            className="bg-white rounded-2xl shadow p-6 hover:shadow-md transition flex justify-between items-start gap-4 cursor-pointer"
+                          >
+                            <div>
+                              <img
+                                src={user.photo}
+                                alt={user.displayName}
+                                style={{ width: 48, height: 48, borderRadius: "50%" }}
+                              />
+                              <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                                {user.displayName}
+                              </h4>
+                              <p className="text-gray-600 text-sm">
+                                {user.mail || user.userPrincipalName}
+                              </p>
+                              <p className="text-gray-500 text-xs mt-1 italic">{user.jobTitle}</p>
+                              {/* KPI display */}
+                              {userKPI && (
+                                <div className="mt-2 text-xs text-blue-900">
+                                  Attendance: {userKPI.attendance}%<br />
+                                  Tardiness: {userKPI.tardiness}%<br />
+                                  Utilization: {userKPI.utilizationScore}%
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ))}
                 </div>

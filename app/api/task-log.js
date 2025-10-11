@@ -1,4 +1,3 @@
-// /pages/api/task-log.js
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth/[...nextauth]"; // adjust path if different
 import { connectToDatabase } from "@/lib/mongodb";
@@ -14,7 +13,7 @@ export default async function handler(req, res) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    await connectToDatabase();
+  
     const { db } = await connectToDatabase();
     const collection = db.collection("tasklogs");
 
@@ -24,8 +23,38 @@ export default async function handler(req, res) {
       const { taskId, action } = req.body;
       const now = new Date();
 
+      if (!action && req.body.durationSeconds !== undefined) {
+        const {
+          durationSeconds,
+          taskType,
+          isProductive,
+          description,
+          timestamp,
+          user,
+          task,
+        } = req.body;
+
+        const log = {
+          email: user || email,
+          taskId,
+          task,
+          taskType,
+          isProductive,
+          description,
+          durationSeconds,
+          timestamp: timestamp ? new Date(timestamp) : new Date(),
+          action: "manual",
+        };
+
+        await collection.insertOne(log);
+
+        
+
+        return res.status(201).json({ success: true, message: "Manual log saved", log });
+      }
+
       if (!taskId || !action) {
-        console.error("❌ Missing required fields:", { taskId, action });
+        console.error("Missing required fields:", { taskId, action });
         return res.status(400).json({ error: "Missing required fields" });
       }
 
