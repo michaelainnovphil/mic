@@ -136,7 +136,7 @@ useEffect(() => {
       );
 
       if (res.ok && data) {
-        const grouped = { present: [], tardy: [], absent: [] };
+        const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -148,8 +148,21 @@ useEffect(() => {
 
           const userShifts = shiftDetailsPerUser[emailLower] || [];
           const latestShift = userShifts[userShifts.length - 1];
+          // detect rest day or leave
+          const isRestDay =
+            latestShift?.shiftType?.toLowerCase() === "rest day" ||
+            latestShift?.isRestDay === true ||
+            (latestShift?.startDateTime &&
+              new Date(latestShift.startDateTime).toString().toLowerCase().includes("sun"));
+
+          const isLeave =
+            latestShift?.shiftType?.toLowerCase() === "leave" ||
+            latestShift?.isLeave === true ||
+            latestShift?.notes?.toLowerCase()?.includes("leave");
+
           const clockInTime = latestShift?.clockIn || null;
           const breakMinutes = latestShift?.breakMinutes ?? 0;
+
 
           // use either presence firstLogin OR shift clockIn
           const firstLoginTime = u.firstLogin
@@ -198,6 +211,28 @@ useEffect(() => {
             email: emailLower,
             breakMinutes,
           };
+
+          // classify rest day and leave before pushing to present/tardy/absent
+if (isRestDay) {
+  grouped.restDay.push({
+    ...u,
+    status: "restDay",
+    attendanceScore: 100,
+    firstLoginTime: null,
+  });
+  return detail;
+}
+
+if (isLeave) {
+  grouped.leave.push({
+    ...u,
+    status: "leave",
+    attendanceScore: 100,
+    firstLoginTime: null,
+  });
+  return detail;
+}
+
 
           if (finalStatus === "present") grouped.present.push(detail);
           else if (finalStatus === "tardy") grouped.tardy.push(detail);
@@ -566,6 +601,46 @@ const handleDeleteDA = async (id) => {
         ) : (
           <p className="text-sm text-gray-500">No present employees</p>
         )}
+
+        {/* Rest Day Employees */}
+{dailyStats.details.restDay?.length > 0 && (
+  <div>
+    <h4 className="font-medium text-blue-600 mb-2">
+      Rest Day ({dailyStats.details.restDay.length})
+    </h4>
+    <ul className="space-y-1">
+      {dailyStats.details.restDay.map((u) => (
+        <li
+          key={u.userId}
+          className="flex justify-between items-center text-sm p-2 rounded-lg bg-blue-50 border border-blue-200"
+        >
+          <span className="font-medium text-gray-700">{u.name}</span>
+          <span className="italic text-blue-700">Rest Day</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
+
+{/* Leave Employees */}
+{dailyStats.details.leave?.length > 0 && (
+  <div>
+    <h4 className="font-medium text-purple-600 mb-2">
+      On Leave ({dailyStats.details.leave.length})
+    </h4>
+    <ul className="space-y-1">
+      {dailyStats.details.leave.map((u) => (
+        <li
+          key={u.userId}
+          className="flex justify-between items-center text-sm p-2 rounded-lg bg-purple-50 border border-purple-200"
+        >
+          <span className="font-medium text-gray-700">{u.name}</span>
+          <span className="italic text-purple-700">On Leave</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+)}
 
         {/* Absent Employees */}
         {dailyStats.details.absent?.length > 0 && (

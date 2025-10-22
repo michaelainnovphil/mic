@@ -1,10 +1,27 @@
-// app/api/shifts/route.js
 "use server";
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 
+// Retry helper for Graph API
+async function fetchWithRetry(url, options, retries = 3, delay = 2000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.ok) return res;
+
+    const text = await res.text().catch(() => "");
+    if ([500, 502, 504].includes(res.status) && attempt < retries) {
+      console.warn(`Retrying Graph request after ${res.status}... (Attempt ${attempt})`);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+
+    throw new Error(`Graph fetch failed ${res.status}: ${text}`);
+  }
+}
+
+// Extract start/end
 function extractStartEnd(shift) {
   const c = shift.sharedShift ?? shift.draftShift ?? shift;
   const start =
@@ -20,20 +37,16 @@ function extractStartEnd(shift) {
   return { start, end };
 }
 
+// Fetch all shifts
 async function fetchAllShifts(teamId, accessToken) {
   const all = [];
   let url = `https://graph.microsoft.com/v1.0/teams/${teamId}/schedule/shifts?$top=200`;
 
   while (url) {
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(20000),
     });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Graph shifts fetch failed ${res.status}: ${text}`);
-    }
 
     const json = await res.json().catch(() => ({}));
     const items = Array.isArray(json.value) ? json.value : [];
@@ -44,20 +57,16 @@ async function fetchAllShifts(teamId, accessToken) {
   return all;
 }
 
+// Fetch all timecards
 async function fetchAllTimeCards(teamId, accessToken) {
   const all = [];
   let url = `https://graph.microsoft.com/v1.0/teams/${teamId}/schedule/timeCards?$top=200`;
 
   while (url) {
-    const res = await fetch(url, {
+    const res = await fetchWithRetry(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(20000),
     });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Graph timeCards fetch failed ${res.status}: ${text}`);
-    }
 
     const json = await res.json().catch(() => ({}));
     const items = Array.isArray(json.value) ? json.value : [];
@@ -68,7 +77,7 @@ async function fetchAllTimeCards(teamId, accessToken) {
   return all;
 }
 
-// Resolve Graph user objectId -> email
+// Resolve userId → email
 async function resolveEmails(hoursById, accessToken) {
   const hoursByEmail = {};
 
@@ -83,14 +92,10 @@ async function resolveEmails(hoursById, accessToken) {
       if (res.ok) {
         const u = await res.json();
         email = (u.mail || u.userPrincipalName || email).toLowerCase().trim();
-      } else {
-        const txt = await res.text().catch(() => "");
-        console.warn(`User lookup failed for ${graphUserId}: ${res.status} ${txt}`);
       }
 
       hoursByEmail[email] = (hoursByEmail[email] || 0) + Number(hrs || 0);
-    } catch (e) {
-      console.warn(`Error resolving user ${graphUserId}:`, e?.message || e);
+    } catch {
       const key = graphUserId.toLowerCase().trim();
       hoursByEmail[key] = (hoursByEmail[key] || 0) + Number(hrs || 0);
     }
@@ -99,6 +104,7 @@ async function resolveEmails(hoursById, accessToken) {
   return hoursByEmail;
 }
 
+// MAIN GET handler
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
@@ -120,100 +126,105 @@ export async function GET() {
 
     const hoursById = {};
     const shiftDetailsPerUser = {};
-
-    // Organize timecards by userId
     const timeCardsByUser = {};
+
+    // Organize timecards by user
     timeCards.forEach((tc) => {
       if (!tc.userId) return;
       if (!timeCardsByUser[tc.userId]) timeCardsByUser[tc.userId] = [];
       timeCardsByUser[tc.userId].push(tc);
     });
 
-    shifts.forEach((shift) => {
+    // Go through shifts
+    for (const shift of shifts) {
       const userId = shift.userId;
-      if (!userId) return;
+      if (!userId) continue;
 
       const { start, end } = extractStartEnd(shift);
-      if (!start || !end) return;
+      if (!start || !end) continue;
 
       const s = new Date(start);
       const e = new Date(end);
+      if (s < monthStart || s >= nextMonthStart) continue;
 
-      if (s >= monthStart && s < nextMonthStart) {
-        const scheduledHours = (e - s) / (1000 * 60 * 60);
+      const scheduledHours = (e - s) / (1000 * 60 * 60);
+      const note = (shift.sharedShift?.notes || shift.displayName || "").toLowerCase();
 
+      const isRestDay = /rest\s*day/.test(note);
+      const isSickLeave = /sick/.test(note);
+      const isVacationLeave = /vacation/.test(note);
+      const isLeave = isSickLeave || isVacationLeave;
+      const isAbsent = note.includes("absent") && !isLeave && !isRestDay;
+
+      if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
+
+      // Only count Regular Work Days as worked hours
+      if (!isLeave && !isRestDay) {
         hoursById[userId] = (hoursById[userId] || 0) + scheduledHours;
+      }
 
-        if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
+      const baseEntry = {
+        start: s.toISOString(),
+        end: e.toISOString(),
+        scheduledHours,
+        note,
+        status: isRestDay
+          ? "Rest Day"
+          : isSickLeave
+          ? "Sick Leave"
+          : isVacationLeave
+          ? "Vacation Leave"
+          : isAbsent
+          ? "Absent"
+          : "Regular Work Day",
+      };
 
-        // Base entry
-        const baseEntry = {
-          start: s.toISOString(),
-          end: e.toISOString(),
-          scheduledHours,
-          note: shift.sharedShift?.notes || shift.displayName || "",
-        };
+      // Match with timecards if any
+      if (timeCardsByUser[userId] && timeCardsByUser[userId].length > 0) {
+        timeCardsByUser[userId].forEach((tc) => {
+          const clockIn = tc.clockInEvent?.dateTime ? new Date(tc.clockInEvent.dateTime) : null;
+          const clockOut = tc.clockOutEvent?.dateTime ? new Date(tc.clockOutEvent.dateTime) : null;
 
-        // Merge in timeCards if available
-        if (timeCardsByUser[userId] && timeCardsByUser[userId].length > 0) {
-          timeCardsByUser[userId].forEach((tc) => {
-            const clockIn = tc.clockInEvent?.dateTime
-              ? new Date(tc.clockInEvent.dateTime)
-              : null;
-            const clockOut = tc.clockOutEvent?.dateTime
-              ? new Date(tc.clockOutEvent.dateTime)
-              : null;
+          if (clockIn && (clockIn < monthStart || clockIn >= nextMonthStart)) return;
 
-            if (
-              clockIn &&
-              (clockIn < monthStart || clockIn >= nextMonthStart)
-            ) {
-              return; // skip this timecard
-            }
-
-            // 
-            let totalBreakMinutes = 0;
-            if (Array.isArray(tc.breaks)) {
-              tc.breaks.forEach((b) => {
-                const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
-                const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
-                if (bs && be) {
-                  totalBreakMinutes += (be - bs) / (1000 * 60);
-                }
-              });
-            }
-
-            // Compute worked hours
-            let workedHours = null;
-            if (clockIn && clockOut) {
-              workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
-              workedHours -= totalBreakMinutes / 60; // subtract breaks
-            }
-
-            shiftDetailsPerUser[userId].push({
-              ...baseEntry,
-              clockIn: clockIn ? clockIn.toISOString() : null,
-              clockOut: clockOut ? clockOut.toISOString() : null,
-              workedHours,
-              breakMinutes: totalBreakMinutes,
+          let totalBreakMinutes = 0;
+          if (Array.isArray(tc.breaks)) {
+            tc.breaks.forEach((b) => {
+              const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
+              const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
+              if (bs && be) totalBreakMinutes += (be - bs) / (1000 * 60);
             });
-          });
-        } else {
-          // no clock-ins
+          }
+
+          let workedHours = null;
+          if (clockIn && clockOut) {
+            workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
+            workedHours -= totalBreakMinutes / 60;
+          }
+
           shiftDetailsPerUser[userId].push({
             ...baseEntry,
-            clockIn: null,
-            clockOut: null,
-            workedHours: null,
-            breakMinutes: 0,
+            clockIn: clockIn ? clockIn.toISOString() : null,
+            clockOut: clockOut ? clockOut.toISOString() : null,
+            workedHours,
+            breakMinutes: totalBreakMinutes,
           });
-        }
+        });
+      } else {
+        // No timecard — still record
+        shiftDetailsPerUser[userId].push({
+          ...baseEntry,
+          clockIn: null,
+          clockOut: null,
+          workedHours: null,
+          breakMinutes: 0,
+        });
       }
-    });
+    }
 
     const shiftHoursPerUser = await resolveEmails(hoursById, session.accessToken);
 
-    // Attach shift details per email for frontend use
+    // Attach email mapping
     const shiftDetailsByEmail = {};
     for (const [userId, details] of Object.entries(shiftDetailsPerUser)) {
       try {
