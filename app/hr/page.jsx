@@ -29,8 +29,9 @@ export default function OverviewPage() {
     presence: 0,
     attendance: 0,
     tardiness: 0,
-    details: { present: [], tardy: [], absent: [] },
+    details: { present: [], tardy: [], absent: [], restDay: [] },
   });
+
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showTardinessModal, setShowTardinessModal] = useState(false);
   const [showOnTimeModal, setShowOnTimeModal] = useState(false);
@@ -138,115 +139,79 @@ useEffect(() => {
       if (res.ok && data) {
         const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        // details from presence + shifts
         const detailsWithAttendance = (data.details || []).map((u) => {
           const emailLower = (u.email || u.mail || u.userPrincipalName || "").toLowerCase();
           const userId = u.userId || u.id || emailLower;
-
           const userShifts = shiftDetailsPerUser[emailLower] || [];
           const latestShift = userShifts[userShifts.length - 1];
+
+          const shiftType = latestShift?.shiftType?.toLowerCase() || "";
+          const noteText = latestShift?.note?.trim() || "";
+
           // detect rest day or leave
           const isRestDay =
-            latestShift?.shiftType?.toLowerCase() === "rest day" ||
-            latestShift?.isRestDay === true ||
-            (latestShift?.startDateTime &&
-              new Date(latestShift.startDateTime).toString().toLowerCase().includes("sun"));
+            shiftType.includes("rest day") ||
+            latestShift?.isRestDay === true;
 
           const isLeave =
-            latestShift?.shiftType?.toLowerCase() === "leave" ||
+            shiftType.includes("leave") ||
+            shiftType.includes("sick leave") ||
             latestShift?.isLeave === true ||
-            latestShift?.notes?.toLowerCase()?.includes("leave");
+            noteText.toLowerCase().includes("leave");
 
           const clockInTime = latestShift?.clockIn || null;
           const breakMinutes = latestShift?.breakMinutes ?? 0;
-
-
-          // use either presence firstLogin OR shift clockIn
           const firstLoginTime = u.firstLogin
             ? new Date(u.firstLogin)
             : clockInTime
             ? new Date(clockInTime)
             : null;
 
-          let attendanceScore = 50;
           let finalStatus = "absent";
-
           if (firstLoginTime) {
-  // cutoff for today 8:30 AM
-  const cutoff = new Date();
-  cutoff.setHours(8, 30, 0, 0);
+            const cutoff = new Date();
+            cutoff.setHours(8, 30, 0, 0);
+            const cutoffStatus = new Date();
+            cutoffStatus.setHours(8, 31, 0, 0);
+            finalStatus = firstLoginTime <= cutoffStatus ? "present" : "tardy";
+          }
 
-  if (firstLoginTime <= cutoff) {
-    attendanceScore = 100;
-  } else {
-    const diffMins = Math.floor((firstLoginTime - cutoff) / 60000);
-    if (diffMins <= 5) attendanceScore = 95;
-    else if (diffMins <= 10) attendanceScore = 90;
-    else if (diffMins <= 15) attendanceScore = 85;
-    else attendanceScore = 50;
-  }
+          // add descriptive note
+          const displayName = u.displayName || u.name || emailLower;
+          let note = "";
 
-  const sameDay =
-    firstLoginTime.getFullYear() === today.getFullYear() &&
-    firstLoginTime.getMonth() === today.getMonth() &&
-    firstLoginTime.getDate() === today.getDate();
-
-  if (sameDay) {
-    const cutoffStatus = new Date();
-    cutoffStatus.setHours(8, 31, 0, 0);
-    finalStatus = firstLoginTime <= cutoffStatus ? "present" : "tardy";
-  }
-}
-
+          if (isLeave) {
+            note = `${displayName} - Leave${noteText ? ` (${noteText})` : ""}`;
+          } else if (isRestDay) {
+            note = `${displayName} - Rest Day`;
+          } else if (finalStatus === "absent" && noteText) {
+            note = `${displayName} - Absent (${noteText})`;
+          } else if (finalStatus === "present" || finalStatus === "tardy") {
+            note = `${displayName} - ${finalStatus === "present" ? "Present" : "Tardy"}`;
+          }
 
           const detail = {
             ...u,
-            attendanceScore,
-            firstLoginTime,
-            status: finalStatus,
             userId,
             email: emailLower,
             breakMinutes,
+            firstLoginTime,
+            status: finalStatus,
+            note,
           };
 
-          // classify rest day and leave before pushing to present/tardy/absent
-if (isRestDay) {
-  grouped.restDay.push({
-    ...u,
-    status: "restDay",
-    attendanceScore: 100,
-    firstLoginTime: null,
-  });
-  return detail;
-}
-
-if (isLeave) {
-  grouped.leave.push({
-    ...u,
-    status: "leave",
-    attendanceScore: 100,
-    firstLoginTime: null,
-  });
-  return detail;
-}
-
-
-          if (finalStatus === "present") grouped.present.push(detail);
+          // classify to correct group
+          if (isRestDay) grouped.restDay.push(detail);
+          else if (isLeave) grouped.leave.push(detail);
+          else if (finalStatus === "present") grouped.present.push(detail);
           else if (finalStatus === "tardy") grouped.tardy.push(detail);
           else grouped.absent.push(detail);
 
           return detail;
         });
 
-        // track who already has presence/shift data
-        const presentEmails = new Set(
-          detailsWithAttendance.map((d) => d.email).filter(Boolean)
-        );
-
-        // ensure all valid users are included
+        // ensure all users included
+        const presentEmails = new Set(detailsWithAttendance.map((d) => d.email).filter(Boolean));
         validUsers.forEach((user) => {
           const email = (user.mail || user.userPrincipalName || "").toLowerCase();
           if (!email) return;
@@ -259,17 +224,19 @@ if (isLeave) {
               firstLoginTime: null,
               status: "absent",
               breakMinutes: 0,
+              note: `${user.displayName} - Absent`,
             });
           }
         });
 
         const totalUsers = grouped.present.length + grouped.tardy.length + grouped.absent.length;
         const presentCount = grouped.present.length + grouped.tardy.length;
-
-        const attendancePercent = totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
-        const tardinessPercent = presentCount > 0
-          ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
-          : 0;
+        const attendancePercent =
+          totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
+        const tardinessPercent =
+          presentCount > 0
+            ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
+            : 0;
 
         let adherenceSum = 0;
         let adherenceUsers = 0;
@@ -278,9 +245,8 @@ if (isLeave) {
           adherenceSum += u.breakMinutes > 75 ? 50 : 100;
         });
 
-        const adherencePercent = adherenceUsers > 0
-          ? Math.round(adherenceSum / adherenceUsers)
-          : 0;
+        const adherencePercent =
+          adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 0;
 
         setDailyStats({
           presence: attendancePercent,
@@ -290,13 +256,14 @@ if (isLeave) {
           details: grouped,
         });
       }
-    } catch (err) {
-      console.error("Failed to fetch daily stats", err);
+    } catch (error) {
+      console.error("Error fetching daily stats:", error);
     }
   }
 
   fetchDailyStats();
 }, []);
+
 
 
 
@@ -573,8 +540,7 @@ const handleDeleteDA = async (id) => {
           <div>
             <h4 className="font-medium text-green-600 mb-2">
               Present (
-              {dailyStats.details.present.length + dailyStats.details.tardy.length}
-              )
+              {dailyStats.details.present.length + dailyStats.details.tardy.length})
             </h4>
             <ul className="space-y-1">
               {[...dailyStats.details.present, ...dailyStats.details.tardy].map((u) => (
@@ -603,44 +569,44 @@ const handleDeleteDA = async (id) => {
         )}
 
         {/* Rest Day Employees */}
-{dailyStats.details.restDay?.length > 0 && (
-  <div>
-    <h4 className="font-medium text-blue-600 mb-2">
-      Rest Day ({dailyStats.details.restDay.length})
-    </h4>
-    <ul className="space-y-1">
-      {dailyStats.details.restDay.map((u) => (
-        <li
-          key={u.userId}
-          className="flex justify-between items-center text-sm p-2 rounded-lg bg-blue-50 border border-blue-200"
-        >
-          <span className="font-medium text-gray-700">{u.name}</span>
-          <span className="italic text-blue-700">Rest Day</span>
-        </li>
-      ))}
-    </ul>
-  </div>
-)}
+        {dailyStats.details.restDay?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-blue-600 mb-2">
+              Rest Day ({dailyStats.details.restDay.length})
+            </h4>
+            <ul className="space-y-1">
+              {dailyStats.details.restDay.map((u) => (
+                <li
+                  key={u.userId}
+                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-blue-50 border border-blue-200"
+                >
+                  <span className="font-medium text-gray-700">{u.name}</span>
+                  <span className="italic text-blue-700">Rest Day</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-{/* Leave Employees */}
-{dailyStats.details.leave?.length > 0 && (
-  <div>
-    <h4 className="font-medium text-purple-600 mb-2">
-      On Leave ({dailyStats.details.leave.length})
-    </h4>
-    <ul className="space-y-1">
-      {dailyStats.details.leave.map((u) => (
-        <li
-          key={u.userId}
-          className="flex justify-between items-center text-sm p-2 rounded-lg bg-purple-50 border border-purple-200"
-        >
-          <span className="font-medium text-gray-700">{u.name}</span>
-          <span className="italic text-purple-700">On Leave</span>
-        </li>
-      ))}
-    </ul>
-  </div>
-)}
+        {/* On Leave Employees */}
+        {dailyStats.details.leave?.length > 0 && (
+          <div>
+            <h4 className="font-medium text-purple-600 mb-2">
+              On Leave ({dailyStats.details.leave.length})
+            </h4>
+            <ul className="space-y-1">
+              {dailyStats.details.leave.map((u) => (
+                <li
+                  key={u.userId}
+                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-purple-50 border border-purple-200"
+                >
+                  <span className="font-medium text-gray-700">{u.name}</span>
+                  <span className="italic text-purple-700">On Leave</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Absent Employees */}
         {dailyStats.details.absent?.length > 0 && (
@@ -665,6 +631,8 @@ const handleDeleteDA = async (id) => {
     </Dialog.Panel>
   </div>
 </Dialog>
+
+
 
 
         {/* Tardiness Modal */}
@@ -692,18 +660,16 @@ const handleDeleteDA = async (id) => {
                         <span className="italic text-yellow-700">Tardy</span>
                       </div>
                       <div className="mt-1 text-gray-600">
-  First login:{" "}
-  <span className="font-mono">
-    {u.firstLoginTime
-      ? new Date(u.firstLoginTime).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "N/A"}
-  </span>
-</div>
-
-
+                      First login:{" "}
+                      <span className="font-mono">
+                        {u.firstLoginTime
+                          ? new Date(u.firstLoginTime).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "N/A"}
+                      </span>
+                    </div>
                     </li>
                   ))}
                 </ul>
@@ -890,12 +856,6 @@ const handleDeleteDA = async (id) => {
     </Dialog.Panel>
   </div>
 </Dialog>
-
-
-
-
-
-
       </div>
     </div>
   );
