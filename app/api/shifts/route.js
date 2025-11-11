@@ -37,6 +37,33 @@ function extractStartEnd(shift) {
   return { start, end };
 }
 
+// Helper: filter by period
+function filterByPeriod(date, period) {
+  if (!date) return false;
+  const now = new Date();
+  const d = new Date(date);
+
+  if (period === "daily") {
+    return (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    );
+  } else if (period === "weekly") {
+    const day = now.getDay() || 7; // Sunday = 7
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - day + 1);
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+    return d >= weekStart && d <= weekEnd;
+  } else if (period === "monthly") {
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }
+  return true; // default: include all
+}
+
 // Fetch all shifts
 async function fetchAllShifts(teamId, accessToken) {
   const all = [];
@@ -106,9 +133,8 @@ async function resolveEmails(hoursById, accessToken) {
   return hoursByEmail;
 }
 
-
 // MAIN GET handler
-export async function GET() {
+export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.accessToken) {
@@ -120,9 +146,9 @@ export async function GET() {
       return NextResponse.json({ error: "Missing MS_TEAM_ID" }, { status: 500 });
     }
 
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    // Read period query
+    const url = new URL(req.url);
+    const period = url.searchParams.get("period") || "daily";
 
     const shifts = await fetchAllShifts(teamId, session.accessToken);
     const timeCards = await fetchAllTimeCards(teamId, session.accessToken);
@@ -139,106 +165,99 @@ export async function GET() {
     });
 
     // Go through shifts
-for (const shift of shifts) {
-  const userId = shift.userId;
-  if (!userId) continue;
+    for (const shift of shifts) {
+      const userId = shift.userId;
+      if (!userId) continue;
 
-  const { start, end } = extractStartEnd(shift);
-  const s = start ? new Date(start) : null;
-  const e = end ? new Date(end) : null;
+      const { start, end } = extractStartEnd(shift);
+      const s = start ? new Date(start) : null;
+      const e = end ? new Date(end) : null;
 
-  // Skip shifts outside the current month if they have valid times
-  if (s && (s < monthStart || s >= nextMonthStart)) continue;
+      // Filter by period
+      if (!filterByPeriod(s, period)) continue;
 
-  const scheduledHours = s && e ? (e - s) / (1000 * 60 * 60) : 0;
+      const scheduledHours = s && e ? (e - s) / (1000 * 60 * 60) : 0;
 
-  // ✅ Read and normalize note/title
-  const rawNote =
-    shift.sharedShift?.notes ||
-    shift.sharedShift?.displayName ||
-    shift.draftShift?.notes ||
-    shift.draftShift?.displayName ||
-    shift.notes ||
-    shift.displayName ||
-    "";
+      const rawNote =
+        shift.sharedShift?.notes ||
+        shift.sharedShift?.displayName ||
+        shift.draftShift?.notes ||
+        shift.draftShift?.displayName ||
+        shift.notes ||
+        shift.displayName ||
+        "";
 
-  const note = rawNote.toLowerCase().trim();
+      const note = rawNote.toLowerCase().trim();
 
-  // ✅ Detect special shift types
-  let type = "work";
-  if (note.includes("rest day")) type = "rest";
-  else if (note.includes("leave") || note.includes("time off") || shift.timeOffReasonId) type = "leave";
+      let type = "work";
+      if (note.includes("rest day")) type = "rest";
+      else if (note.includes("leave") || note.includes("time off") || shift.timeOffReasonId) type = "leave";
 
-  // ✅ Initialize user container
-  if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
+      if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
 
-  // ✅ Add to scheduled hours only for actual work shifts
-  if (type === "work") {
-    hoursById[userId] = (hoursById[userId] || 0) + scheduledHours;
-  }
+      if (type === "work") {
+        hoursById[userId] = (hoursById[userId] || 0) + scheduledHours;
+      }
 
-  const baseEntry = {
-    start: s ? s.toISOString() : null,
-    end: e ? e.toISOString() : null,
-    scheduledHours,
-    note,
-    type, // 👈 added this field
-  };
+      const baseEntry = {
+        start: s ? s.toISOString() : null,
+        end: e ? e.toISOString() : null,
+        scheduledHours,
+        note,
+        type,
+      };
 
-  // ✅ If it's a time off or rest day, skip timecard matching
-  if (type === "leave" || type === "rest") {
-    shiftDetailsPerUser[userId].push({
-      ...baseEntry,
-      clockIn: null,
-      clockOut: null,
-      workedHours: 0,
-      breakMinutes: 0,
-    });
-    continue;
-  }
+      if (type === "leave" || type === "rest") {
+        shiftDetailsPerUser[userId].push({
+          ...baseEntry,
+          clockIn: null,
+          clockOut: null,
+          workedHours: 0,
+          breakMinutes: 0,
+        });
+        continue;
+      }
 
-  // ✅ Handle regular work shifts + timecards
-  if (timeCardsByUser[userId]?.length > 0) {
-    timeCardsByUser[userId].forEach((tc) => {
-      const clockIn = tc.clockInEvent?.dateTime ? new Date(tc.clockInEvent.dateTime) : null;
-      const clockOut = tc.clockOutEvent?.dateTime ? new Date(tc.clockOutEvent.dateTime) : null;
+      if (timeCardsByUser[userId]?.length > 0) {
+        timeCardsByUser[userId].forEach((tc) => {
+          const clockIn = tc.clockInEvent?.dateTime ? new Date(tc.clockInEvent.dateTime) : null;
+          const clockOut = tc.clockOutEvent?.dateTime ? new Date(tc.clockOutEvent.dateTime) : null;
 
-      if (clockIn && (clockIn < monthStart || clockIn >= nextMonthStart)) return;
+          if (!filterByPeriod(clockIn, period)) return;
 
-      let totalBreakMinutes = 0;
-      if (Array.isArray(tc.breaks)) {
-        tc.breaks.forEach((b) => {
-          const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
-          const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
-          if (bs && be) totalBreakMinutes += (be - bs) / (1000 * 60);
+          let totalBreakMinutes = 0;
+          if (Array.isArray(tc.breaks)) {
+            tc.breaks.forEach((b) => {
+              const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
+              const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
+              if (bs && be) totalBreakMinutes += (be - bs) / (1000 * 60);
+            });
+          }
+
+          let workedHours = null;
+          if (clockIn && clockOut) {
+            workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
+            workedHours -= totalBreakMinutes / 60;
+          }
+
+          shiftDetailsPerUser[userId].push({
+            ...baseEntry,
+            clockIn: clockIn ? clockIn.toISOString() : null,
+            clockOut: clockOut ? clockOut.toISOString() : null,
+            workedHours,
+            breakMinutes: totalBreakMinutes,
+          });
+        });
+      } else {
+        shiftDetailsPerUser[userId].push({
+          ...baseEntry,
+          clockIn: null,
+          clockOut: null,
+          workedHours: null,
+          breakMinutes: 0,
         });
       }
-
-      let workedHours = null;
-      if (clockIn && clockOut) {
-        workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
-        workedHours -= totalBreakMinutes / 60;
-      }
-
-      shiftDetailsPerUser[userId].push({
-        ...baseEntry,
-        clockIn: clockIn ? clockIn.toISOString() : null,
-        clockOut: clockOut ? clockOut.toISOString() : null,
-        workedHours,
-        breakMinutes: totalBreakMinutes,
-      });
-    });
-  } else {
-    shiftDetailsPerUser[userId].push({
-      ...baseEntry,
-      clockIn: null,
-      clockOut: null,
-      workedHours: null,
-      breakMinutes: 0,
-    });
-  }
-}
-
+    }
 
     const shiftHoursPerUser = await resolveEmails(hoursById, session.accessToken);
 

@@ -40,6 +40,7 @@ export default function OverviewPage() {
   const [disciplinaryRecords, setDisciplinaryRecords] = useState({});
   const [newDA, setNewDA] = useState("");
   const [showAdherenceModal, setShowAdherenceModal] = useState(false);
+  const [period, setPeriod] = useState("daily"); // daily | weekly | monthly
 
 
   // fetch users and tasks
@@ -122,7 +123,7 @@ useEffect(() => {
       const res = await fetch("/api/presence");
       const data = await res.json();
 
-      const shiftRes = await fetch("/api/shifts");
+      const shiftRes = await fetch(`/api/shifts?period=${period}`);
       const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
       const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
 
@@ -262,7 +263,7 @@ useEffect(() => {
   }
 
   fetchDailyStats();
-}, []);
+}, [period, refreshKey]);
 
 
 
@@ -418,6 +419,22 @@ const handleDeleteDA = async (id) => {
               </button>
             )}
           </div>
+
+          {/* Period Filter */}
+<div className="flex gap-2 mb-4">
+  {["daily", "weekly", "monthly"].map((p) => (
+    <button
+      key={p}
+      onClick={() => setPeriod(p)}
+      className={`px-3 py-1 rounded ${
+        period === p ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-700"
+      }`}
+    >
+      {p.charAt(0).toUpperCase() + p.slice(1)}
+    </button>
+  ))}
+</div>
+
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {pieData.map((item) => (
