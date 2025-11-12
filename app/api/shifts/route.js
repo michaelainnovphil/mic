@@ -25,43 +25,10 @@ async function fetchWithRetry(url, options, retries = 3, delay = 2000) {
 function extractStartEnd(shift) {
   const c = shift.sharedShift ?? shift.draftShift ?? shift;
   const start =
-    c?.startDateTime ??
-    c?.start?.dateTime ??
-    c?.start ??
-    null;
+    c?.startDateTime ?? c?.start?.dateTime ?? c?.start ?? null;
   const end =
-    c?.endDateTime ??
-    c?.end?.dateTime ??
-    c?.end ??
-    null;
+    c?.endDateTime ?? c?.end?.dateTime ?? c?.end ?? null;
   return { start, end };
-}
-
-// Helper: filter by period
-function filterByPeriod(date, period) {
-  if (!date) return false;
-  const now = new Date();
-  const d = new Date(date);
-
-  if (period === "daily") {
-    return (
-      d.getFullYear() === now.getFullYear() &&
-      d.getMonth() === now.getMonth() &&
-      d.getDate() === now.getDate()
-    );
-  } else if (period === "weekly") {
-    const day = now.getDay() || 7; // Sunday = 7
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - day + 1);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
-    return d >= weekStart && d <= weekEnd;
-  } else if (period === "monthly") {
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  }
-  return true; // default: include all
 }
 
 // Fetch all shifts
@@ -104,6 +71,7 @@ async function fetchAllTimeCards(teamId, accessToken) {
   return all;
 }
 
+// Map user IDs to emails
 async function resolveEmails(hoursById, accessToken) {
   const entries = Object.entries(hoursById);
   const hoursByEmail = {};
@@ -133,25 +101,53 @@ async function resolveEmails(hoursById, accessToken) {
   return hoursByEmail;
 }
 
-// MAIN GET handler
+// 🟩 Helper to compute start/end for selected period
+function getPeriodRange(period) {
+  const now = new Date();
+  let start, end;
+
+  if (period === "daily") {
+    start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    end = new Date(start);
+    end.setDate(start.getDate() + 1);
+  } else if (period === "weekly") {
+    const currentDay = now.getDay(); // Sunday = 0
+    const diffToMonday = (currentDay + 6) % 7;
+    start = new Date(now);
+    start.setDate(now.getDate() - diffToMonday);
+    start.setHours(0, 0, 0, 0);
+    end = new Date(start);
+    end.setDate(start.getDate() + 7);
+  } else {
+    // monthly
+    start = new Date(now.getFullYear(), now.getMonth(), 1);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  }
+
+  return { start, end };
+}
+
+//  MAIN HANDLER
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session?.accessToken) {
+    if (!session?.accessToken)
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
 
     const teamId = process.env.MS_TEAM_ID;
-    if (!teamId) {
+    if (!teamId)
       return NextResponse.json({ error: "Missing MS_TEAM_ID" }, { status: 500 });
-    }
 
-    // Read period query
+    // ✅ FIX: Get selected period (daily, weekly, monthly)
     const url = new URL(req.url);
-    const period = url.searchParams.get("period") || "daily";
+    const period = url.searchParams.get("period") || "monthly";
+    const { start: periodStart, end: periodEnd } = getPeriodRange(period);
 
-    const shifts = await fetchAllShifts(teamId, session.accessToken);
-    const timeCards = await fetchAllTimeCards(teamId, session.accessToken);
+    // Fetch all shifts/timecards
+    const [shifts, timeCards] = await Promise.all([
+      fetchAllShifts(teamId, session.accessToken),
+      fetchAllTimeCards(teamId, session.accessToken),
+    ]);
 
     const hoursById = {};
     const shiftDetailsPerUser = {};
@@ -164,7 +160,7 @@ export async function GET(req) {
       timeCardsByUser[tc.userId].push(tc);
     });
 
-    // Go through shifts
+    // Filter & process shifts
     for (const shift of shifts) {
       const userId = shift.userId;
       if (!userId) continue;
@@ -173,25 +169,25 @@ export async function GET(req) {
       const s = start ? new Date(start) : null;
       const e = end ? new Date(end) : null;
 
-      // Filter by period
-      if (!filterByPeriod(s, period)) continue;
+      // ✅ FIX: Skip shifts outside selected period
+      if (s && (s < periodStart || s >= periodEnd)) continue;
 
       const scheduledHours = s && e ? (e - s) / (1000 * 60 * 60) : 0;
-
-      const rawNote =
-        shift.sharedShift?.notes ||
-        shift.sharedShift?.displayName ||
-        shift.draftShift?.notes ||
-        shift.draftShift?.displayName ||
-        shift.notes ||
-        shift.displayName ||
-        "";
-
-      const note = rawNote.toLowerCase().trim();
+      const note =
+        (shift.sharedShift?.notes ||
+          shift.sharedShift?.displayName ||
+          shift.draftShift?.notes ||
+          shift.draftShift?.displayName ||
+          shift.notes ||
+          shift.displayName ||
+          ""
+        ).toLowerCase()
+          .trim();
 
       let type = "work";
       if (note.includes("rest day")) type = "rest";
-      else if (note.includes("leave") || note.includes("time off") || shift.timeOffReasonId) type = "leave";
+      else if (note.includes("leave") || note.includes("time off") || shift.timeOffReasonId)
+        type = "leave";
 
       if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
 
@@ -207,7 +203,7 @@ export async function GET(req) {
         type,
       };
 
-      if (type === "leave" || type === "rest") {
+      if (type !== "work") {
         shiftDetailsPerUser[userId].push({
           ...baseEntry,
           clockIn: null,
@@ -218,12 +214,12 @@ export async function GET(req) {
         continue;
       }
 
+      // Match timecards within same period
       if (timeCardsByUser[userId]?.length > 0) {
         timeCardsByUser[userId].forEach((tc) => {
           const clockIn = tc.clockInEvent?.dateTime ? new Date(tc.clockInEvent.dateTime) : null;
           const clockOut = tc.clockOutEvent?.dateTime ? new Date(tc.clockOutEvent.dateTime) : null;
-
-          if (!filterByPeriod(clockIn, period)) return;
+          if (clockIn && (clockIn < periodStart || clockIn >= periodEnd)) return;
 
           let totalBreakMinutes = 0;
           if (Array.isArray(tc.breaks)) {
@@ -282,12 +278,10 @@ export async function GET(req) {
       }
     }
 
-    return NextResponse.json({ shiftHoursPerUser, shiftDetailsPerUser: shiftDetailsByEmail });
+    // ✅ FIX: Include period in final JSON
+    return NextResponse.json({ shiftHoursPerUser, shiftDetailsPerUser: shiftDetailsByEmail, period });
   } catch (error) {
     console.error("Shifts API error:", error?.message || error);
-    return NextResponse.json(
-      { error: error?.message || "Internal Server Error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error?.message || "Internal Server Error" }, { status: 500 });
   }
 }

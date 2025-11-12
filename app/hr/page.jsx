@@ -118,16 +118,18 @@ export default function OverviewPage() {
 
   // fetch daily presence & attendance
 useEffect(() => {
-  async function fetchDailyStats() {
+  async function fetchStats() {
     try {
-      const res = await fetch("/api/presence");
-      const data = await res.json();
+      // 1️⃣ Fetch presence data for the selected period
+      const res = await fetch(`/api/presence?period=${period}`);
+      const data = res.ok ? await res.json() : { details: [] };
 
+      // 2️⃣ Fetch shift details for the same period
       const shiftRes = await fetch(`/api/shifts?period=${period}`);
       const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
       const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
 
-      // fetch all users to ensure absent users are included
+      // 3️⃣ Fetch all users to include absent users
       const usersRes = await fetch("/api/users");
       const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
       const validUsers = (usersData.value || []).filter(
@@ -137,133 +139,109 @@ useEffect(() => {
           !u.jobTitle.toLowerCase().includes("chief")
       );
 
-      if (res.ok && data) {
-        const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
+      // 4️⃣ Aggregate stats
+      const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
 
-        const detailsWithAttendance = (data.details || []).map((u) => {
-          const emailLower = (u.email || u.mail || u.userPrincipalName || "").toLowerCase();
-          const userId = u.userId || u.id || emailLower;
-          const userShifts = shiftDetailsPerUser[emailLower] || [];
-          const latestShift = userShifts[userShifts.length - 1];
+      validUsers.forEach((u) => {
+        const email = (u.mail || u.userPrincipalName || "").toLowerCase();
+        const userShifts = shiftDetailsPerUser[email] || [];
 
-          const shiftType = latestShift?.shiftType?.toLowerCase() || "";
-          const noteText = latestShift?.note?.trim() || "";
+        let totalPresent = 0;
+        let totalTardy = 0;
+        let totalAdherence = 0;
+        let adherenceCount = 0;
+        let isRestDay = false;
+        let isLeave = false;
 
-          // detect rest day or leave
-          const isRestDay =
-            shiftType.includes("rest day") ||
-            latestShift?.isRestDay === true;
+        userShifts.forEach((shift) => {
+          const shiftType = shift?.shiftType?.toLowerCase() || "";
+          const noteText = shift?.note?.trim() || "";
+          const firstLoginTime = shift.clockIn ? new Date(shift.clockIn) : null;
+          const breakMinutes = shift.breakMinutes ?? 0;
 
-          const isLeave =
+          // Detect rest day / leave
+          if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
+          if (
             shiftType.includes("leave") ||
             shiftType.includes("sick leave") ||
-            latestShift?.isLeave === true ||
-            noteText.toLowerCase().includes("leave");
+            shift.isLeave ||
+            noteText.toLowerCase().includes("leave")
+          ) isLeave = true;
 
-          const clockInTime = latestShift?.clockIn || null;
-          const breakMinutes = latestShift?.breakMinutes ?? 0;
-          const firstLoginTime = u.firstLogin
-            ? new Date(u.firstLogin)
-            : clockInTime
-            ? new Date(clockInTime)
-            : null;
-
-          let finalStatus = "absent";
           if (firstLoginTime) {
-            const cutoff = new Date();
-            cutoff.setHours(8, 30, 0, 0);
             const cutoffStatus = new Date();
             cutoffStatus.setHours(8, 31, 0, 0);
-            finalStatus = firstLoginTime <= cutoffStatus ? "present" : "tardy";
+            if (firstLoginTime <= cutoffStatus) totalPresent++;
+            else totalTardy++;
           }
 
-          // add descriptive note
-          const displayName = u.displayName || u.name || emailLower;
-          let note = "";
-
-          if (isLeave) {
-            note = `${displayName} - Leave${noteText ? ` (${noteText})` : ""}`;
-          } else if (isRestDay) {
-            note = `${displayName} - Rest Day`;
-          } else if (finalStatus === "absent" && noteText) {
-            note = `${displayName} - Absent (${noteText})`;
-          } else if (finalStatus === "present" || finalStatus === "tardy") {
-            note = `${displayName} - ${finalStatus === "present" ? "Present" : "Tardy"}`;
-          }
-
-          const detail = {
-            ...u,
-            userId,
-            email: emailLower,
-            breakMinutes,
-            firstLoginTime,
-            status: finalStatus,
-            note,
-          };
-
-          // classify to correct group
-          if (isRestDay) grouped.restDay.push(detail);
-          else if (isLeave) grouped.leave.push(detail);
-          else if (finalStatus === "present") grouped.present.push(detail);
-          else if (finalStatus === "tardy") grouped.tardy.push(detail);
-          else grouped.absent.push(detail);
-
-          return detail;
+          // Adherence calculation
+          adherenceCount++;
+          totalAdherence += breakMinutes > 75 ? 50 : 100;
         });
 
-        // ensure all users included
-        const presentEmails = new Set(detailsWithAttendance.map((d) => d.email).filter(Boolean));
-        validUsers.forEach((user) => {
-          const email = (user.mail || user.userPrincipalName || "").toLowerCase();
-          if (!email) return;
-          if (!presentEmails.has(email)) {
-            grouped.absent.push({
-              userId: user.id,
-              name: user.displayName || email,
-              email,
-              attendanceScore: 0,
-              firstLoginTime: null,
-              status: "absent",
-              breakMinutes: 0,
-              note: `${user.displayName} - Absent`,
-            });
-          }
-        });
-
-        const totalUsers = grouped.present.length + grouped.tardy.length + grouped.absent.length;
-        const presentCount = grouped.present.length + grouped.tardy.length;
         const attendancePercent =
-          totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
-        const tardinessPercent =
-          presentCount > 0
-            ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
+          userShifts.length > 0
+            ? Math.round(((totalPresent + totalTardy) / userShifts.length) * 100)
             : 0;
+        const tardinessPercent =
+          totalPresent + totalTardy > 0
+            ? Math.round((totalPresent / (totalPresent + totalTardy)) * 100)
+            : 0;
+        const adherencePercent = adherenceCount > 0 ? Math.round(totalAdherence / adherenceCount) : 100;
 
-        let adherenceSum = 0;
-        let adherenceUsers = 0;
-        [...grouped.present, ...grouped.tardy].forEach((u) => {
-          adherenceUsers++;
-          adherenceSum += u.breakMinutes > 75 ? 50 : 100;
-        });
+        // Push to grouped
+        const detail = {
+          ...u,
+          userId: u.id,
+          email,
+          attendancePercent,
+          tardinessPercent,
+          adherencePercent,
+          totalPresent,
+          totalTardy,
+          totalShifts: userShifts.length,
+        };
 
-        const adherencePercent =
-          adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 0;
+        if (isRestDay) grouped.restDay.push(detail);
+        else if (isLeave) grouped.leave.push(detail);
+        else if (totalPresent > 0) grouped.present.push(detail);
+        else if (totalTardy > 0) grouped.tardy.push(detail);
+        else grouped.absent.push(detail);
+      });
 
-        setDailyStats({
-          presence: attendancePercent,
-          attendance: attendancePercent,
-          tardiness: tardinessPercent,
-          adherence: adherencePercent,
-          details: grouped,
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching daily stats:", error);
+      // Overall stats for the chart
+      const totalUsers = validUsers.length;
+      const presentCount = grouped.present.length + grouped.tardy.length;
+      const attendancePercent =
+        totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
+      const tardinessPercent =
+        presentCount > 0
+          ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
+          : 0;
+      let adherenceSum = 0;
+      let adherenceUsers = 0;
+      [...grouped.present, ...grouped.tardy].forEach((u) => {
+        adherenceUsers++;
+        adherenceSum += u.adherencePercent;
+      });
+      const adherencePercent =
+        adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 0;
+
+      setDailyStats({
+        attendance: attendancePercent,
+        tardiness: tardinessPercent,
+        adherence: adherencePercent,
+        details: grouped,
+      });
+    } catch (err) {
+      console.error("Error fetching stats:", err);
     }
   }
 
-  fetchDailyStats();
+  fetchStats();
 }, [period, refreshKey]);
+
 
 
 

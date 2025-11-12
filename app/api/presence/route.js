@@ -50,15 +50,16 @@ async function gFetch(token, path, init = {}) {
 }
 
 /**
- * Compute attendance from sign-ins (premium)
+ * Compute attendance from sign-ins
  */
-async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
+async function computeFromSignIns(token, cutoffISO, allowedIds = null, startDate = null) {
+  const startOfPeriodISO = startDate ? startDate.toISOString() : isoStartOfToday();
+
   const usersResp = await gFetch(
     token,
     `/users?$select=id,displayName,mail,userPrincipalName,accountEnabled,jobTitle,assignedLicenses&$top=${MAX_USERS}`
   );
   let users = usersResp.value || [];
-
 
   users = users
     .filter((u) => u.accountEnabled !== false)
@@ -70,9 +71,8 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
     users = users.filter((u) => allowedSet.has(u.id));
   }
 
-  const startOfDayISO = isoStartOfToday();
   const signIns = [];
-  let url = `/auditLogs/signIns?$filter=createdDateTime ge ${startOfDayISO}`;
+  let url = `/auditLogs/signIns?$filter=createdDateTime ge ${startOfPeriodISO}`;
   for (let i = 0; i < 10 && url; i++) {
     const page = await gFetch(token, url);
     (page.value || []).forEach((si) => signIns.push(si));
@@ -128,6 +128,7 @@ async function computeFromSignIns(token, cutoffISO, allowedIds = null) {
     source: "auditLogs.signIns",
     supportsTardiness: true,
     cutoff: ATTENDANCE_CUTOFF,
+    period: startDate ? `${startOfPeriodISO} → now` : "today",
     total,
     present,
     percent: total ? Math.round((present / total) * 100) : 0,
@@ -231,19 +232,29 @@ async function computeFromPresenceSnapshot(token, allowedIds = null) {
 /**
  * Route handlers
  */
-export async function GET() {
+export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
     const token = session?.accessToken;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const period = searchParams.get("period") || "daily"; // daily | weekly | monthly
+
+    const now = new Date();
+    let startDate = new Date(now);
+
+    if (period === "weekly") startDate.setDate(now.getDate() - 6); // last 7 days
+    else if (period === "monthly") startDate.setMonth(now.getMonth() - 1); // last 30 days approx
+
+    startDate.setHours(0, 0, 0, 0); // midnight
 
     const cutoffISO = parseCutoffToTodayISO(ATTENDANCE_CUTOFF);
 
+    // --- fallback logic for non-premium tenants ---
     try {
-      const fromSignIns = await computeFromSignIns(token, cutoffISO);
-      return NextResponse.json(fromSignIns);
+      const attendance = await computeFromSignIns(token, cutoffISO, null, startDate);
+      return NextResponse.json(attendance);
     } catch (e) {
       const code = e?.body?.error?.code || e?.body?.code || e?.code || "";
       const premiumLike =
@@ -265,21 +276,29 @@ export async function GET() {
   }
 }
 
+
 export async function POST(req) {
   try {
     const session = await getServerSession(authOptions);
     const token = session?.accessToken;
-    if (!token) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
     const allowedIds = Array.isArray(body.ids) ? body.ids : [];
 
+    const { period } = body;
+    const now = new Date();
+    let startDate = new Date(now);
+
+    if (period === "weekly") startDate.setDate(now.getDate() - 6);
+    else if (period === "monthly") startDate.setMonth(now.getMonth() - 1);
+
+    startDate.setHours(0, 0, 0, 0);
+
     const cutoffISO = parseCutoffToTodayISO(ATTENDANCE_CUTOFF);
 
     try {
-      const fromSignIns = await computeFromSignIns(token, cutoffISO, allowedIds);
+      const fromSignIns = await computeFromSignIns(token, cutoffISO, allowedIds, startDate);
       return NextResponse.json(fromSignIns);
     } catch (e) {
       const code = e?.body?.error?.code || e?.body?.code || e?.code || "";
