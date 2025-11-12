@@ -119,7 +119,6 @@ function getPeriodRange(period) {
     end = new Date(start);
     end.setDate(start.getDate() + 7);
   } else {
-    // monthly
     start = new Date(now.getFullYear(), now.getMonth(), 1);
     end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   }
@@ -138,7 +137,7 @@ export async function GET(req) {
     if (!teamId)
       return NextResponse.json({ error: "Missing MS_TEAM_ID" }, { status: 500 });
 
-    // ✅ FIX: Get selected period (daily, weekly, monthly)
+    // Get selected period (default: monthly)
     const url = new URL(req.url);
     const period = url.searchParams.get("period") || "monthly";
     const { start: periodStart, end: periodEnd } = getPeriodRange(period);
@@ -169,7 +168,7 @@ export async function GET(req) {
       const s = start ? new Date(start) : null;
       const e = end ? new Date(end) : null;
 
-      // ✅ FIX: Skip shifts outside selected period
+      // Skip shifts outside the selected period
       if (s && (s < periodStart || s >= periodEnd)) continue;
 
       const scheduledHours = s && e ? (e - s) / (1000 * 60 * 60) : 0;
@@ -278,7 +277,7 @@ export async function GET(req) {
       }
     }
 
-    // ✅ FIX: Include period in final JSON
+    // Return filtered results
     return NextResponse.json({ shiftHoursPerUser, shiftDetailsPerUser: shiftDetailsByEmail, period });
   } catch (error) {
     console.error("Shifts API error:", error?.message || error);

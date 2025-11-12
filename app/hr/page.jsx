@@ -43,6 +43,28 @@ export default function OverviewPage() {
   const [period, setPeriod] = useState("daily"); // daily | weekly | monthly
 
 
+// Compute automatic DA based on attendance stats
+const computeAutoDA = (userDetail) => {
+  if (!userDetail) return 0;
+
+  const { totalTardy, totalPresent, breakMinutes, totalShifts } = userDetail;
+
+  let DA = 0;
+
+  // Rule 1: 4 lates in a month
+  if (totalTardy >= 4) DA += 1;
+
+  // Rule 2: more than 120 minutes late
+  if ((userDetail.minutesLate ?? 0) > 120) DA += 1;
+
+  // Rule 3: absent
+  if (totalShifts > 0 && totalTardy + totalPresent === 0) DA += 1;
+
+  return DA;
+};
+
+
+
   // fetch users and tasks
   useEffect(() => {
     async function fetchUsersAndTasks() {
@@ -117,21 +139,20 @@ export default function OverviewPage() {
   }, [refreshKey]);
 
   // fetch daily presence & attendance
+// fetch daily presence & attendance
 useEffect(() => {
   async function fetchStats() {
     try {
-      // 1️⃣ Fetch presence data for the selected period
-      const res = await fetch(`/api/presence?period=${period}`);
-      const data = res.ok ? await res.json() : { details: [] };
+      // Fetch shifts and users in parallel
+      const [shiftsRes, usersRes] = await Promise.all([
+        fetch(`/api/shifts?period=${period}`),
+        fetch("/api/users"),
+      ]);
 
-      // 2️⃣ Fetch shift details for the same period
-      const shiftRes = await fetch(`/api/shifts?period=${period}`);
-      const shiftData = shiftRes.ok ? await shiftRes.json() : { shiftDetailsPerUser: {} };
-      const shiftDetailsPerUser = shiftData.shiftDetailsPerUser || {};
-
-      // 3️⃣ Fetch all users to include absent users
-      const usersRes = await fetch("/api/users");
+      const shiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
       const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
+
+      // Filter valid users
       const validUsers = (usersData.value || []).filter(
         (u) =>
           u.jobTitle &&
@@ -139,61 +160,78 @@ useEffect(() => {
           !u.jobTitle.toLowerCase().includes("chief")
       );
 
-      // 4️⃣ Aggregate stats
+      // Map email => name for safe lookup
+      const emailToName = {};
+      validUsers.forEach(u => {
+        const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+        emailToName[emailKey] = u.displayName || u.mail || u.userPrincipalName || "Unknown";
+      });
+
       const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
 
       validUsers.forEach((u) => {
         const email = (u.mail || u.userPrincipalName || "").toLowerCase();
-        const userShifts = shiftDetailsPerUser[email] || [];
+        const userShifts = shiftData.shiftDetailsPerUser[email] || [];
 
         let totalPresent = 0;
         let totalTardy = 0;
         let totalAdherence = 0;
         let adherenceCount = 0;
+        let breakMinutes = 0;
         let isRestDay = false;
         let isLeave = false;
+        let exceededBreak = false;
 
         userShifts.forEach((shift) => {
-          const shiftType = shift?.shiftType?.toLowerCase() || "";
-          const noteText = shift?.note?.trim() || "";
-          const firstLoginTime = shift.clockIn ? new Date(shift.clockIn) : null;
-          const breakMinutes = shift.breakMinutes ?? 0;
+  const shiftType = shift?.shiftType?.toLowerCase() || "";
+  const noteText = shift?.note?.trim() || "";
+  const firstLoginTime = shift.clockIn ? new Date(shift.clockIn) : null;
+  const shiftBreak = shift.breakMinutes ?? 0;
 
-          // Detect rest day / leave
-          if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
-          if (
-            shiftType.includes("leave") ||
-            shiftType.includes("sick leave") ||
-            shift.isLeave ||
-            noteText.toLowerCase().includes("leave")
-          ) isLeave = true;
+  if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
+  if (
+    shiftType.includes("leave") ||
+    shiftType.includes("sick leave") ||
+    shift.isLeave ||
+    noteText.toLowerCase().includes("leave")
+  ) isLeave = true;
 
-          if (firstLoginTime) {
-            const cutoffStatus = new Date();
-            cutoffStatus.setHours(8, 31, 0, 0);
-            if (firstLoginTime <= cutoffStatus) totalPresent++;
-            else totalTardy++;
-          }
+  if (firstLoginTime) {
+    const cutoff = new Date(shift.date || shift.clockIn);
+    cutoff.setHours(8, 31, 0, 0);
+    if (firstLoginTime <= cutoff) totalPresent++;
+    else totalTardy++;
+  }
 
-          // Adherence calculation
-          adherenceCount++;
-          totalAdherence += breakMinutes > 75 ? 50 : 100;
-        });
+  adherenceCount++;
+  totalAdherence += shiftBreak > 75 ? 50 : 100;
+
+  // For daily period, keep actual minutes
+  // For weekly/monthly, we only care if > 60 per day
+  if (period === "daily") {
+    breakMinutes = shiftBreak;
+  } else {
+    // just mark if any day exceeded 60 mins
+    if (shiftBreak > 60) exceededBreak = true;
+  }
+});
 
         const attendancePercent =
           userShifts.length > 0
             ? Math.round(((totalPresent + totalTardy) / userShifts.length) * 100)
             : 0;
+
         const tardinessPercent =
           totalPresent + totalTardy > 0
             ? Math.round((totalPresent / (totalPresent + totalTardy)) * 100)
             : 0;
+
         const adherencePercent = adherenceCount > 0 ? Math.round(totalAdherence / adherenceCount) : 100;
 
-        // Push to grouped
+        // Build detail object with guaranteed name
         const detail = {
-          ...u,
           userId: u.id,
+          name: emailToName[email],
           email,
           attendancePercent,
           tardinessPercent,
@@ -201,8 +239,11 @@ useEffect(() => {
           totalPresent,
           totalTardy,
           totalShifts: userShifts.length,
+          breakMinutes,
+          exceededBreak,
         };
 
+        // Push to correct group
         if (isRestDay) grouped.restDay.push(detail);
         else if (isLeave) grouped.leave.push(detail);
         else if (totalPresent > 0) grouped.present.push(detail);
@@ -210,28 +251,47 @@ useEffect(() => {
         else grouped.absent.push(detail);
       });
 
-      // Overall stats for the chart
+      // --- Step 1: Compute auto DA for all users ---
+      const allUsers = [
+        ...grouped.present,
+        ...grouped.tardy,
+        ...grouped.absent,
+      ];
+
+      const autoDARecords = {};
+      allUsers.forEach((u) => {
+        const daCount = computeAutoDA(u);
+        if (daCount > 0) {
+          autoDARecords[u.userId] = Array(daCount)
+            .fill(null)
+            .map((_, i) => ({ action: "Auto DA", _id: `auto-${i}-${u.userId}` }));
+        }
+      });
+      setDisciplinaryRecords(autoDARecords);
+
+      // Compute overall stats for charts
       const totalUsers = validUsers.length;
       const presentCount = grouped.present.length + grouped.tardy.length;
-      const attendancePercent =
+      const overallAttendance =
         totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
-      const tardinessPercent =
+      const overallTardiness =
         presentCount > 0
           ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
           : 0;
+
       let adherenceSum = 0;
       let adherenceUsers = 0;
       [...grouped.present, ...grouped.tardy].forEach((u) => {
         adherenceUsers++;
         adherenceSum += u.adherencePercent;
       });
-      const adherencePercent =
-        adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 0;
+      const overallAdherence =
+        adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 100;
 
       setDailyStats({
-        attendance: attendancePercent,
-        tardiness: tardinessPercent,
-        adherence: adherencePercent,
+        attendance: overallAttendance,
+        tardiness: overallTardiness,
+        adherence: overallAdherence,
         details: grouped,
       });
     } catch (err) {
