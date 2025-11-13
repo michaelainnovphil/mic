@@ -160,7 +160,7 @@ useEffect(() => {
           !u.jobTitle.toLowerCase().includes("chief")
       );
 
-      // Map email => name for safe lookup
+      // Map email => name
       const emailToName = {};
       validUsers.forEach(u => {
         const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
@@ -173,52 +173,68 @@ useEffect(() => {
         const email = (u.mail || u.userPrincipalName || "").toLowerCase();
         const userShifts = shiftData.shiftDetailsPerUser[email] || [];
 
-        let totalPresent = 0;
-        let totalTardy = 0;
         let totalAdherence = 0;
         let adherenceCount = 0;
         let breakMinutes = 0;
         let isRestDay = false;
         let isLeave = false;
         let exceededBreak = false;
+        let firstLogin = null;
 
-        userShifts.forEach((shift) => {
-  const shiftType = shift?.shiftType?.toLowerCase() || "";
-  const noteText = shift?.note?.trim() || "";
-  const firstLoginTime = shift.clockIn ? new Date(shift.clockIn) : null;
-  const shiftBreak = shift.breakMinutes ?? 0;
+        // Compute shift-level data
+        const shifts = userShifts.map((shift) => {
+          const shiftType = shift?.shiftType?.toLowerCase() || "";
+          const noteText = shift?.note?.trim() || "";
+          const shiftBreak = shift.breakMinutes ?? 0;
 
-  if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
-  if (
-    shiftType.includes("leave") ||
-    shiftType.includes("sick leave") ||
-    shift.isLeave ||
-    noteText.toLowerCase().includes("leave")
-  ) isLeave = true;
+          if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
+          if (
+            shiftType.includes("leave") ||
+            shiftType.includes("sick leave") ||
+            shift.isLeave ||
+            noteText.toLowerCase().includes("leave")
+          ) isLeave = true;
 
-  if (firstLoginTime) {
-    const cutoff = new Date(shift.date || shift.clockIn);
-    cutoff.setHours(8, 31, 0, 0);
-    if (firstLoginTime <= cutoff) totalPresent++;
-    else totalTardy++;
-  }
+          let status = "Absent";
+          if (shift.clockIn) {
+            const loginTime = new Date(shift.clockIn);
+            const cutoff = new Date(shift.start || shift.clockIn);
+            cutoff.setHours(8, 31, 0, 0);
+            status = loginTime <= cutoff ? "Present" : "Tardy";
 
-  adherenceCount++;
-  totalAdherence += shiftBreak > 75 ? 50 : 100;
+            if (!firstLogin || loginTime < firstLogin) firstLogin = loginTime;
+          }
 
-  // For daily period, keep actual minutes
-  // For weekly/monthly, we only care if > 60 per day
-  if (period === "daily") {
-    breakMinutes = shiftBreak;
-  } else {
-    // just mark if any day exceeded 60 mins
-    if (shiftBreak > 60) exceededBreak = true;
-  }
-});
+          // Adherence calculation
+          adherenceCount++;
+          totalAdherence += shiftBreak > 75 ? 50 : 100;
+
+          if (period === "daily") {
+            breakMinutes = shiftBreak;
+          } else {
+            if (shiftBreak > 60) exceededBreak = true;
+          }
+
+          return {
+            date: shift.date || shift.start || shift.clockIn,
+            status,
+            firstLogin: shift.clockIn || null,
+            breakMinutes: shiftBreak,
+          };
+        });
+
+        // Adjust adherence for week/month
+        if (period !== "daily" && adherenceCount > 0) {
+          const expected = adherenceCount * 100;
+          totalAdherence = exceededBreak ? expected - 50 : expected;
+        }
+
+        const totalPresent = shifts.filter(s => s.status === "Present").length;
+        const totalTardy = shifts.filter(s => s.status === "Tardy").length;
 
         const attendancePercent =
-          userShifts.length > 0
-            ? Math.round(((totalPresent + totalTardy) / userShifts.length) * 100)
+          shifts.length > 0
+            ? Math.round(((totalPresent + totalTardy) / shifts.length) * 100)
             : 0;
 
         const tardinessPercent =
@@ -226,9 +242,9 @@ useEffect(() => {
             ? Math.round((totalPresent / (totalPresent + totalTardy)) * 100)
             : 0;
 
-        const adherencePercent = adherenceCount > 0 ? Math.round(totalAdherence / adherenceCount) : 100;
+        const adherencePercent =
+          adherenceCount > 0 ? Math.round(totalAdherence / adherenceCount) : 100;
 
-        // Build detail object with guaranteed name
         const detail = {
           userId: u.id,
           name: emailToName[email],
@@ -238,26 +254,23 @@ useEffect(() => {
           adherencePercent,
           totalPresent,
           totalTardy,
-          totalShifts: userShifts.length,
+          totalShifts: shifts.length,
           breakMinutes,
           exceededBreak,
+          firstLogin: firstLogin ? firstLogin.toISOString() : null,
+          shifts,
         };
 
-        // Push to correct group
+        // Group users by their status in this period
         if (isRestDay) grouped.restDay.push(detail);
         else if (isLeave) grouped.leave.push(detail);
-        else if (totalPresent > 0) grouped.present.push(detail);
-        else if (totalTardy > 0) grouped.tardy.push(detail);
+        else if (shifts.some(s => s.status === "Tardy")) grouped.tardy.push(detail);
+        else if (shifts.some(s => s.status === "Present")) grouped.present.push(detail);
         else grouped.absent.push(detail);
       });
 
-      // --- Step 1: Compute auto DA for all users ---
-      const allUsers = [
-        ...grouped.present,
-        ...grouped.tardy,
-        ...grouped.absent,
-      ];
-
+      // --- Compute auto DA ---
+      const allUsers = [...grouped.present, ...grouped.tardy, ...grouped.absent];
       const autoDARecords = {};
       allUsers.forEach((u) => {
         const daCount = computeAutoDA(u);
@@ -590,98 +603,48 @@ const handleDeleteDA = async (id) => {
       </Dialog.Title>
 
       <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-        {/* Present + Tardy Employees */}
-        {[...dailyStats.details.present, ...dailyStats.details.tardy].length > 0 ? (
-          <div>
-            <h4 className="font-medium text-green-600 mb-2">
-              Present (
-              {dailyStats.details.present.length + dailyStats.details.tardy.length})
-            </h4>
-            <ul className="space-y-1">
-              {[...dailyStats.details.present, ...dailyStats.details.tardy].map((u) => (
-                <li
-                  key={u.userId}
-                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-green-50 border border-green-200"
-                >
-                  <span className="font-medium text-gray-700">{u.name}</span>
-                  <span
-                    className={
-                      dailyStats.details.tardy.some((t) => t.userId === u.userId)
-                        ? "italic text-yellow-600"
-                        : "italic text-green-700"
-                    }
+        {["present", "tardy", "absent", "restDay", "leave"].map((status) => {
+          const usersList = dailyStats.details[status] || [];
+          if (!usersList.length) return null;
+
+          const colorMap = {
+            present: "green",
+            tardy: "yellow",
+            absent: "red",
+            restDay: "blue",
+            leave: "purple",
+          };
+
+          return (
+            <div key={status}>
+              <h4 className={`font-medium text-${colorMap[status]}-600 mb-2`}>
+                {status.charAt(0).toUpperCase() + status.slice(1)} ({usersList.length})
+              </h4>
+              <ul className="space-y-1">
+                {usersList.map((u) => (
+                  <li
+                    key={u.userId}
+                    className={`flex flex-col text-sm p-2 rounded-lg bg-${colorMap[status]}-50 border border-${colorMap[status]}-200`}
                   >
-                    {dailyStats.details.tardy.some((t) => t.userId === u.userId)
-                      ? "Tardy"
-                      : "Present"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No present employees</p>
-        )}
+                    <span className="font-medium text-gray-700">{u.name}</span>
+                    <ul className="ml-4 list-disc text-gray-600">
+  {(u.shifts || []).map((s, idx) => (
+    <li key={idx}>
+      {s.date
+        ? new Date(s.date).toLocaleDateString()
+        : "N/A"}{" "}
+      - {s.status}
+      {s.firstLogin && ` (Login: ${new Date(s.firstLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
+    </li>
+  ))}
+</ul>
 
-        {/* Rest Day Employees */}
-        {dailyStats.details.restDay?.length > 0 && (
-          <div>
-            <h4 className="font-medium text-blue-600 mb-2">
-              Rest Day ({dailyStats.details.restDay.length})
-            </h4>
-            <ul className="space-y-1">
-              {dailyStats.details.restDay.map((u) => (
-                <li
-                  key={u.userId}
-                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-blue-50 border border-blue-200"
-                >
-                  <span className="font-medium text-gray-700">{u.name}</span>
-                  <span className="italic text-blue-700">Rest Day</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* On Leave Employees */}
-        {dailyStats.details.leave?.length > 0 && (
-          <div>
-            <h4 className="font-medium text-purple-600 mb-2">
-              On Leave ({dailyStats.details.leave.length})
-            </h4>
-            <ul className="space-y-1">
-              {dailyStats.details.leave.map((u) => (
-                <li
-                  key={u.userId}
-                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-purple-50 border border-purple-200"
-                >
-                  <span className="font-medium text-gray-700">{u.name}</span>
-                  <span className="italic text-purple-700">On Leave</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Absent Employees */}
-        {dailyStats.details.absent?.length > 0 && (
-          <div>
-            <h4 className="font-medium text-red-600 mb-2">
-              Absent ({dailyStats.details.absent.length})
-            </h4>
-            <ul className="space-y-1">
-              {dailyStats.details.absent.map((u) => (
-                <li
-                  key={u.userId}
-                  className="flex justify-between items-center text-sm p-2 rounded-lg bg-red-50 border border-red-200"
-                >
-                  <span className="font-medium text-gray-700">{u.name}</span>
-                  <span className="italic text-red-700">Absent</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </div>
     </Dialog.Panel>
   </div>
@@ -690,59 +653,57 @@ const handleDeleteDA = async (id) => {
 
 
 
+
         {/* Tardiness Modal */}
         <Dialog
-          open={showTardinessModal}
-          onClose={() => setShowTardinessModal(false)}
-          className="relative z-50"
+  open={showTardinessModal}
+  onClose={() => setShowTardinessModal(false)}
+  className="relative z-50"
+>
+  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+  <div className="fixed inset-0 flex items-center justify-center p-4">
+    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
+      <Dialog.Title className="text-lg font-semibold">
+        Tardiness
+      </Dialog.Title>
+
+      {dailyStats.details.tardy?.length > 0 ? (
+        <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
+          {dailyStats.details.tardy.map((u) => (
+            <li
+              key={u.userId}
+              className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
+            >
+              <span className="font-medium">{u.name}</span>
+              <ul className="ml-4 list-disc text-yellow-700">
+                {u.shifts.map((s, idx) => (
+                  <li key={idx}>
+                    {s.date
+                      ? new Date(s.date).toLocaleDateString()
+                      : "N/A"}{" "}
+                    - {s.status} {s.firstLogin && `(Login: ${new Date(s.firstLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-gray-500">No tardy employees</p>
+      )}
+
+      <div className="mt-4 flex justify-end">
+        <button
+          onClick={() => setShowTardinessModal(false)}
+          className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
         >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-              <Dialog.Title className="text-lg font-semibold">
-                Tardiness
-              </Dialog.Title>
+          Close
+        </button>
+      </div>
+    </Dialog.Panel>
+  </div>
+</Dialog>
 
-              {dailyStats.details.tardy?.length > 0 ? (
-                <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-                  {dailyStats.details.tardy.map((u) => (
-                    <li
-                      key={u.userId}
-                      className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
-                    >
-                      <div className="flex justify-between">
-                        <span className="font-medium">{u.name}</span>
-                        <span className="italic text-yellow-700">Tardy</span>
-                      </div>
-                      <div className="mt-1 text-gray-600">
-                      First login:{" "}
-                      <span className="font-mono">
-                        {u.firstLoginTime
-                          ? new Date(u.firstLoginTime).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "N/A"}
-                      </span>
-                    </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-2 text-sm text-gray-500">No tardy employees</p>
-              )}
-
-              <div className="mt-4 flex justify-end">
-                <button
-                  onClick={() => setShowTardinessModal(false)}
-                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-                >
-                  Close
-                </button>
-              </div>
-            </Dialog.Panel>
-          </div>
-        </Dialog>
 
         {/* Adherence Modal */}
 <Dialog
@@ -757,26 +718,30 @@ const handleDeleteDA = async (id) => {
         Adherence
       </Dialog.Title>
 
-      {([...dailyStats.details.present, ...dailyStats.details.tardy].filter(
-        (u) => u.breakMinutes > 75
-      ).length > 0) ? (
+      {([...dailyStats.details.present, ...dailyStats.details.tardy]
+        .filter(u => u.shifts.some(s => s.breakMinutes > 75))
+        .length > 0) ? (
         <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
           {[...dailyStats.details.present, ...dailyStats.details.tardy]
-            .filter((u) => u.breakMinutes > 75)
+            .filter(u => u.shifts.some(s => s.breakMinutes > 75))
             .map((u) => (
               <li
                 key={u.userId}
                 className="flex flex-col text-sm p-3 rounded bg-red-50 border border-red-200"
               >
-                <div className="flex justify-between">
-                  <span className="font-medium">{u.name}</span>
-                  <span className="italic text-red-700">
-                    Exceeded Break
-                  </span>
-                </div>
-                <div className="mt-1 text-gray-600">
-                  Break Time: <span className="font-mono">{u.breakMinutes} min</span>
-                </div>
+                <span className="font-medium">{u.name}</span>
+                <ul className="ml-4 list-disc text-red-700">
+                  {u.shifts
+                    .filter(s => s.breakMinutes > 75)
+                    .map((s, idx) => (
+                      <li key={idx}>
+                        {s.date
+                          ? new Date(s.date).toLocaleDateString()
+                          : "N/A"}{" "}
+                        - Break: {s.breakMinutes} min
+                      </li>
+                    ))}
+                </ul>
               </li>
             ))}
         </ul>

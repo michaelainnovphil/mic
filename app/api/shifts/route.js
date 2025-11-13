@@ -24,10 +24,8 @@ async function fetchWithRetry(url, options, retries = 3, delay = 2000) {
 // Extract start/end
 function extractStartEnd(shift) {
   const c = shift.sharedShift ?? shift.draftShift ?? shift;
-  const start =
-    c?.startDateTime ?? c?.start?.dateTime ?? c?.start ?? null;
-  const end =
-    c?.endDateTime ?? c?.end?.dateTime ?? c?.end ?? null;
+  const start = c?.startDateTime ?? c?.start?.dateTime ?? c?.start ?? null;
+  const end = c?.endDateTime ?? c?.end?.dateTime ?? c?.end ?? null;
   return { start, end };
 }
 
@@ -101,7 +99,7 @@ async function resolveEmails(hoursById, accessToken) {
   return hoursByEmail;
 }
 
-// 🟩 Helper to compute start/end for selected period
+// Compute period start/end
 function getPeriodRange(period) {
   const now = new Date();
   let start, end;
@@ -111,7 +109,7 @@ function getPeriodRange(period) {
     end = new Date(start);
     end.setDate(start.getDate() + 1);
   } else if (period === "weekly") {
-    const currentDay = now.getDay(); // Sunday = 0
+    const currentDay = now.getDay();
     const diffToMonday = (currentDay + 6) % 7;
     start = new Date(now);
     start.setDate(now.getDate() - diffToMonday);
@@ -126,7 +124,7 @@ function getPeriodRange(period) {
   return { start, end };
 }
 
-//  MAIN HANDLER
+// MAIN HANDLER
 export async function GET(req) {
   try {
     const session = await getServerSession(authOptions);
@@ -137,12 +135,10 @@ export async function GET(req) {
     if (!teamId)
       return NextResponse.json({ error: "Missing MS_TEAM_ID" }, { status: 500 });
 
-    // Get selected period (default: monthly)
     const url = new URL(req.url);
     const period = url.searchParams.get("period") || "monthly";
     const { start: periodStart, end: periodEnd } = getPeriodRange(period);
 
-    // Fetch all shifts/timecards
     const [shifts, timeCards] = await Promise.all([
       fetchAllShifts(teamId, session.accessToken),
       fetchAllTimeCards(teamId, session.accessToken),
@@ -152,14 +148,19 @@ export async function GET(req) {
     const shiftDetailsPerUser = {};
     const timeCardsByUser = {};
 
-    // Group timecards by user
+    // Group timecards by user and date
     timeCards.forEach((tc) => {
       if (!tc.userId) return;
-      if (!timeCardsByUser[tc.userId]) timeCardsByUser[tc.userId] = [];
-      timeCardsByUser[tc.userId].push(tc);
+      const dateKey = tc.clockInEvent?.dateTime
+        ? new Date(tc.clockInEvent.dateTime).toISOString().split("T")[0]
+        : null;
+      if (!dateKey) return;
+
+      if (!timeCardsByUser[tc.userId]) timeCardsByUser[tc.userId] = {};
+      timeCardsByUser[tc.userId][dateKey] = tc;
     });
 
-    // Filter & process shifts
+    // Process shifts
     for (const shift of shifts) {
       const userId = shift.userId;
       if (!userId) continue;
@@ -168,19 +169,20 @@ export async function GET(req) {
       const s = start ? new Date(start) : null;
       const e = end ? new Date(end) : null;
 
-      // Skip shifts outside the selected period
       if (s && (s < periodStart || s >= periodEnd)) continue;
 
       const scheduledHours = s && e ? (e - s) / (1000 * 60 * 60) : 0;
       const note =
-        (shift.sharedShift?.notes ||
+        (
+          shift.sharedShift?.notes ||
           shift.sharedShift?.displayName ||
           shift.draftShift?.notes ||
           shift.draftShift?.displayName ||
           shift.notes ||
           shift.displayName ||
           ""
-        ).toLowerCase()
+        )
+          .toLowerCase()
           .trim();
 
       let type = "work";
@@ -190,10 +192,6 @@ export async function GET(req) {
 
       if (!shiftDetailsPerUser[userId]) shiftDetailsPerUser[userId] = [];
 
-      if (type === "work") {
-        hoursById[userId] = (hoursById[userId] || 0) + scheduledHours;
-      }
-
       const baseEntry = {
         start: s ? s.toISOString() : null,
         end: e ? e.toISOString() : null,
@@ -202,46 +200,36 @@ export async function GET(req) {
         type,
       };
 
-      if (type !== "work") {
+      if (type === "work") hoursById[userId] = (hoursById[userId] || 0) + scheduledHours;
+
+      const shiftDateKey = s ? s.toISOString().split("T")[0] : null;
+      const tc = shiftDateKey ? timeCardsByUser[userId]?.[shiftDateKey] : null;
+
+      if (tc && type === "work") {
+        const clockIn = tc.clockInEvent?.dateTime ? new Date(tc.clockInEvent.dateTime) : null;
+        const clockOut = tc.clockOutEvent?.dateTime ? new Date(tc.clockOutEvent.dateTime) : null;
+
+        let totalBreakMinutes = 0;
+        if (Array.isArray(tc.breaks)) {
+          tc.breaks.forEach((b) => {
+            const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
+            const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
+            if (bs && be) totalBreakMinutes += (be - bs) / (1000 * 60);
+          });
+        }
+
+        let workedHours = null;
+        if (clockIn && clockOut) {
+          workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
+          workedHours -= totalBreakMinutes / 60;
+        }
+
         shiftDetailsPerUser[userId].push({
           ...baseEntry,
-          clockIn: null,
-          clockOut: null,
-          workedHours: 0,
-          breakMinutes: 0,
-        });
-        continue;
-      }
-
-      // Match timecards within same period
-      if (timeCardsByUser[userId]?.length > 0) {
-        timeCardsByUser[userId].forEach((tc) => {
-          const clockIn = tc.clockInEvent?.dateTime ? new Date(tc.clockInEvent.dateTime) : null;
-          const clockOut = tc.clockOutEvent?.dateTime ? new Date(tc.clockOutEvent.dateTime) : null;
-          if (clockIn && (clockIn < periodStart || clockIn >= periodEnd)) return;
-
-          let totalBreakMinutes = 0;
-          if (Array.isArray(tc.breaks)) {
-            tc.breaks.forEach((b) => {
-              const bs = b?.start?.dateTime ? new Date(b.start.dateTime) : null;
-              const be = b?.end?.dateTime ? new Date(b.end.dateTime) : null;
-              if (bs && be) totalBreakMinutes += (be - bs) / (1000 * 60);
-            });
-          }
-
-          let workedHours = null;
-          if (clockIn && clockOut) {
-            workedHours = (clockOut - clockIn) / (1000 * 60 * 60);
-            workedHours -= totalBreakMinutes / 60;
-          }
-
-          shiftDetailsPerUser[userId].push({
-            ...baseEntry,
-            clockIn: clockIn ? clockIn.toISOString() : null,
-            clockOut: clockOut ? clockOut.toISOString() : null,
-            workedHours,
-            breakMinutes: totalBreakMinutes,
-          });
+          clockIn: clockIn ? clockIn.toISOString() : null,
+          clockOut: clockOut ? clockOut.toISOString() : null,
+          workedHours,
+          breakMinutes: totalBreakMinutes,
         });
       } else {
         shiftDetailsPerUser[userId].push({
@@ -256,7 +244,7 @@ export async function GET(req) {
 
     const shiftHoursPerUser = await resolveEmails(hoursById, session.accessToken);
 
-    // Attach email mapping
+    // Map userId → email
     const shiftDetailsByEmail = {};
     for (const [userId, details] of Object.entries(shiftDetailsPerUser)) {
       try {
@@ -277,8 +265,11 @@ export async function GET(req) {
       }
     }
 
-    // Return filtered results
-    return NextResponse.json({ shiftHoursPerUser, shiftDetailsPerUser: shiftDetailsByEmail, period });
+    return NextResponse.json({
+      shiftHoursPerUser,
+      shiftDetailsPerUser: shiftDetailsByEmail,
+      period,
+    });
   } catch (error) {
     console.error("Shifts API error:", error?.message || error);
     return NextResponse.json({ error: error?.message || "Internal Server Error" }, { status: 500 });
