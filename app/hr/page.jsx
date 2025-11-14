@@ -19,6 +19,8 @@ const allowedUsers = [
   "carce@innovphil.com",
   "aarce@innovphil.com",
   "jlolfindo@innovphil.com",
+  "ejgonzales@innovphil.com",
+  "sdflores@innovphil.com",
 ];
 
 export default function OverviewPage() {
@@ -167,16 +169,16 @@ const computeAutoDA = (userDetail) => {
 
       validUsers.forEach((u) => {
         const email = (u.mail || u.userPrincipalName || "").toLowerCase();
-        const userShiftsRaw = shiftData.shiftDetailsPerUser[email] || [];
+        let userShifts = shiftData.shiftDetailsPerUser[email] || [];
 
         // --- Deduplicate shifts per day (keep earliest clockIn per day) ---
         const shiftMap = {};
-        userShiftsRaw.forEach((s) => {
+        userShifts.forEach((s) => {
           const day = new Date(s.clockIn || s.start).toISOString().split("T")[0];
           if (!shiftMap[day]) shiftMap[day] = s;
-          else if (s.clockIn && new Date(s.clockIn) < new Date(shiftMap[day].clockIn)) shiftMap[day] = s;
+          else if (new Date(s.clockIn) < new Date(shiftMap[day].clockIn)) shiftMap[day] = s;
         });
-        const uniqueShifts = Object.values(shiftMap);
+        userShifts = Object.values(shiftMap);
 
         let firstLogin = null;
         let totalAdherence = 0;
@@ -189,7 +191,7 @@ const computeAutoDA = (userDetail) => {
         let isRestDay = false;
         let isLeave = false;
 
-        const shifts = uniqueShifts.map((shift) => {
+        const shifts = userShifts.map((shift) => {
           const shiftType = (shift?.shiftType || "").toLowerCase();
           const noteText = (shift?.note || "").trim().toLowerCase();
           const shiftBreak = shift.breakMinutes ?? 0;
@@ -229,15 +231,15 @@ const computeAutoDA = (userDetail) => {
           };
         });
 
-        // Adjust adherence for weekly/monthly
+        // Adjust adherence for weekly/monthly using deduped shifts
         if (period !== "daily" && adherenceCount > 0) {
           const expected = adherenceCount * 100;
           totalAdherence = exceededBreak ? expected - 50 : expected;
         }
 
         const attendancePercent =
-          uniqueShifts.length > 0
-            ? Math.round(((presentCount + tardyCount) / uniqueShifts.length) * 100)
+          userShifts.length > 0
+            ? Math.round(((presentCount + tardyCount) / userShifts.length) * 100)
             : 0;
 
         const tardinessPercent =
@@ -258,7 +260,7 @@ const computeAutoDA = (userDetail) => {
           totalPresent: presentCount,
           totalTardy: tardyCount,
           totalAbsent: absentCount,
-          totalShifts: uniqueShifts.length,
+          totalShifts: shifts.length,
           shifts,
           firstLogin: firstLogin ? firstLogin.toISOString() : null,
         };
@@ -270,7 +272,7 @@ const computeAutoDA = (userDetail) => {
         else grouped.absent.push(detail);
       });
 
-      // Compute auto DA
+      // --- Compute auto DA ---
       const allUsers = [...grouped.present, ...grouped.tardy, ...grouped.absent];
       const autoDARecords = {};
       allUsers.forEach((u) => {
@@ -283,7 +285,7 @@ const computeAutoDA = (userDetail) => {
       });
       setDisciplinaryRecords(autoDARecords);
 
-      // Overall stats
+      // Compute overall stats for charts
       const totalUsers = validUsers.length;
       const presentCount = grouped.present.length + grouped.tardy.length;
       const overallAttendance =
@@ -315,7 +317,6 @@ const computeAutoDA = (userDetail) => {
 
   fetchStats();
 }, [period, refreshKey]);
-
 
 
 
