@@ -139,11 +139,9 @@ const computeAutoDA = (userDetail) => {
   }, [refreshKey]);
 
   // fetch daily presence & attendance
-// fetch daily presence & attendance
-useEffect(() => {
+  useEffect(() => {
   async function fetchStats() {
     try {
-      // Fetch shifts and users in parallel
       const [shiftsRes, usersRes] = await Promise.all([
         fetch(`/api/shifts?period=${period}`),
         fetch("/api/users"),
@@ -152,7 +150,6 @@ useEffect(() => {
       const shiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
       const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
 
-      // Filter valid users
       const validUsers = (usersData.value || []).filter(
         (u) =>
           u.jobTitle &&
@@ -160,7 +157,6 @@ useEffect(() => {
           !u.jobTitle.toLowerCase().includes("chief")
       );
 
-      // Map email => name
       const emailToName = {};
       validUsers.forEach(u => {
         const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
@@ -171,49 +167,59 @@ useEffect(() => {
 
       validUsers.forEach((u) => {
         const email = (u.mail || u.userPrincipalName || "").toLowerCase();
-        const userShifts = shiftData.shiftDetailsPerUser[email] || [];
+        const userShiftsRaw = shiftData.shiftDetailsPerUser[email] || [];
 
+        // --- Deduplicate shifts per day (keep earliest clockIn per day) ---
+        const shiftMap = {};
+        userShiftsRaw.forEach((s) => {
+          const day = new Date(s.clockIn || s.start).toISOString().split("T")[0];
+          if (!shiftMap[day]) shiftMap[day] = s;
+          else if (s.clockIn && new Date(s.clockIn) < new Date(shiftMap[day].clockIn)) shiftMap[day] = s;
+        });
+        const uniqueShifts = Object.values(shiftMap);
+
+        let firstLogin = null;
         let totalAdherence = 0;
         let adherenceCount = 0;
-        let breakMinutes = 0;
+        let exceededBreak = false;
+
+        let presentCount = 0;
+        let tardyCount = 0;
+        let absentCount = 0;
         let isRestDay = false;
         let isLeave = false;
-        let exceededBreak = false;
-        let firstLogin = null;
 
-        // Compute shift-level data
-        const shifts = userShifts.map((shift) => {
-          const shiftType = shift?.shiftType?.toLowerCase() || "";
-          const noteText = shift?.note?.trim() || "";
+        const shifts = uniqueShifts.map((shift) => {
+          const shiftType = (shift?.shiftType || "").toLowerCase();
+          const noteText = (shift?.note || "").trim().toLowerCase();
           const shiftBreak = shift.breakMinutes ?? 0;
 
           if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
-          if (
-            shiftType.includes("leave") ||
-            shiftType.includes("sick leave") ||
-            shift.isLeave ||
-            noteText.toLowerCase().includes("leave")
-          ) isLeave = true;
+          if (shiftType.includes("leave") || shiftType.includes("sick leave") || shift.isLeave || noteText.includes("leave"))
+            isLeave = true;
 
           let status = "Absent";
+
           if (shift.clockIn) {
             const loginTime = new Date(shift.clockIn);
-            const cutoff = new Date(shift.start || shift.clockIn);
-            cutoff.setHours(8, 31, 0, 0);
-            status = loginTime <= cutoff ? "Present" : "Tardy";
+            const shiftStart = new Date(shift.start || shift.clockIn);
 
+            const cutoff = new Date(shiftStart);
+            cutoff.setHours(8, 31, 0, 0); // 8:30 AM cutoff
+
+            status = loginTime <= cutoff ? "Present" : "Tardy";
             if (!firstLogin || loginTime < firstLogin) firstLogin = loginTime;
+
+            if (status === "Present") presentCount++;
+            else tardyCount++;
+          } else {
+            absentCount++;
           }
 
           // Adherence calculation
           adherenceCount++;
           totalAdherence += shiftBreak > 75 ? 50 : 100;
-
-          if (period === "daily") {
-            breakMinutes = shiftBreak;
-          } else {
-            if (shiftBreak > 60) exceededBreak = true;
-          }
+          if (period !== "daily" && shiftBreak > 60) exceededBreak = true;
 
           return {
             date: shift.date || shift.start || shift.clockIn,
@@ -223,23 +229,20 @@ useEffect(() => {
           };
         });
 
-        // Adjust adherence for week/month
+        // Adjust adherence for weekly/monthly
         if (period !== "daily" && adherenceCount > 0) {
           const expected = adherenceCount * 100;
           totalAdherence = exceededBreak ? expected - 50 : expected;
         }
 
-        const totalPresent = shifts.filter(s => s.status === "Present").length;
-        const totalTardy = shifts.filter(s => s.status === "Tardy").length;
-
         const attendancePercent =
-          shifts.length > 0
-            ? Math.round(((totalPresent + totalTardy) / shifts.length) * 100)
+          uniqueShifts.length > 0
+            ? Math.round(((presentCount + tardyCount) / uniqueShifts.length) * 100)
             : 0;
 
         const tardinessPercent =
-          totalPresent + totalTardy > 0
-            ? Math.round((totalPresent / (totalPresent + totalTardy)) * 100)
+          presentCount + tardyCount > 0
+            ? Math.round((presentCount / (presentCount + tardyCount)) * 100)
             : 0;
 
         const adherencePercent =
@@ -252,24 +255,22 @@ useEffect(() => {
           attendancePercent,
           tardinessPercent,
           adherencePercent,
-          totalPresent,
-          totalTardy,
-          totalShifts: shifts.length,
-          breakMinutes,
-          exceededBreak,
-          firstLogin: firstLogin ? firstLogin.toISOString() : null,
+          totalPresent: presentCount,
+          totalTardy: tardyCount,
+          totalAbsent: absentCount,
+          totalShifts: uniqueShifts.length,
           shifts,
+          firstLogin: firstLogin ? firstLogin.toISOString() : null,
         };
 
-        // Group users by their status in this period
         if (isRestDay) grouped.restDay.push(detail);
         else if (isLeave) grouped.leave.push(detail);
-        else if (shifts.some(s => s.status === "Tardy")) grouped.tardy.push(detail);
-        else if (shifts.some(s => s.status === "Present")) grouped.present.push(detail);
+        else if (tardyCount > 0) grouped.tardy.push(detail);
+        else if (presentCount > 0) grouped.present.push(detail);
         else grouped.absent.push(detail);
       });
 
-      // --- Compute auto DA ---
+      // Compute auto DA
       const allUsers = [...grouped.present, ...grouped.tardy, ...grouped.absent];
       const autoDARecords = {};
       allUsers.forEach((u) => {
@@ -282,7 +283,7 @@ useEffect(() => {
       });
       setDisciplinaryRecords(autoDARecords);
 
-      // Compute overall stats for charts
+      // Overall stats
       const totalUsers = validUsers.length;
       const presentCount = grouped.present.length + grouped.tardy.length;
       const overallAttendance =
@@ -314,6 +315,7 @@ useEffect(() => {
 
   fetchStats();
 }, [period, refreshKey]);
+
 
 
 
@@ -629,14 +631,12 @@ const handleDeleteDA = async (id) => {
                     <span className="font-medium text-gray-700">{u.name}</span>
                     <ul className="ml-4 list-disc text-gray-600">
   {(u.shifts || []).map((s, idx) => (
-    <li key={idx}>
-      {s.date
-        ? new Date(s.date).toLocaleDateString()
-        : "N/A"}{" "}
-      - {s.status}
-      {s.firstLogin && ` (Login: ${new Date(s.firstLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
-    </li>
-  ))}
+  <li key={idx}>
+    {new Date(s.date).toLocaleDateString()} - {s.status}
+    {s.firstLogin && ` (Login: ${new Date(s.firstLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
+  </li>
+))}
+
 </ul>
 
                   </li>
