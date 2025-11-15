@@ -141,7 +141,7 @@ const computeAutoDA = (userDetail) => {
   }, [refreshKey]);
 
   // fetch daily presence & attendance
-  useEffect(() => {
+useEffect(() => {
   async function fetchStats() {
     try {
       const [shiftsRes, usersRes] = await Promise.all([
@@ -159,26 +159,32 @@ const computeAutoDA = (userDetail) => {
           !u.jobTitle.toLowerCase().includes("chief")
       );
 
-      const emailToName = {};
+      const emailToUser = {};
       validUsers.forEach(u => {
         const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-        emailToName[emailKey] = u.displayName || u.mail || u.userPrincipalName || "Unknown";
+        emailToUser[emailKey] = u;
       });
 
       const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
 
       validUsers.forEach((u) => {
-        const email = (u.mail || u.userPrincipalName || "").toLowerCase();
-        let userShifts = shiftData.shiftDetailsPerUser[email] || [];
+        const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+        let userShifts = shiftData.shiftDetailsPerUser[emailKey] || [];
 
-        // --- Deduplicate shifts per day (keep earliest clockIn per day) ---
+        // Debug: log all shifts received for this user
+        console.log(`[DEBUG] User: ${u.displayName} (${emailKey})`, userShifts);
+
+        // Deduplicate shifts per day
         const shiftMap = {};
         userShifts.forEach((s) => {
           const day = new Date(s.clockIn || s.start).toISOString().split("T")[0];
           if (!shiftMap[day]) shiftMap[day] = s;
-          else if (new Date(s.clockIn) < new Date(shiftMap[day].clockIn)) shiftMap[day] = s;
+          else if (s.clockIn && new Date(s.clockIn) < new Date(shiftMap[day].clockIn)) shiftMap[day] = s;
         });
         userShifts = Object.values(shiftMap);
+
+        // Debug: log after deduplication
+        console.log(`[DEBUG] Deduplicated shifts for ${u.displayName}:`, userShifts);
 
         let firstLogin = null;
         let totalAdherence = 0;
@@ -207,7 +213,7 @@ const computeAutoDA = (userDetail) => {
             const shiftStart = new Date(shift.start || shift.clockIn);
 
             const cutoff = new Date(shiftStart);
-            cutoff.setHours(8, 31, 0, 0); // 8:30 AM cutoff
+            cutoff.setHours(8, 31, 0, 0);
 
             status = loginTime <= cutoff ? "Present" : "Tardy";
             if (!firstLogin || loginTime < firstLogin) firstLogin = loginTime;
@@ -218,7 +224,6 @@ const computeAutoDA = (userDetail) => {
             absentCount++;
           }
 
-          // Adherence calculation
           adherenceCount++;
           totalAdherence += shiftBreak > 75 ? 50 : 100;
           if (period !== "daily" && shiftBreak > 60) exceededBreak = true;
@@ -231,7 +236,6 @@ const computeAutoDA = (userDetail) => {
           };
         });
 
-        // Adjust adherence for weekly/monthly using deduped shifts
         if (period !== "daily" && adherenceCount > 0) {
           const expected = adherenceCount * 100;
           totalAdherence = exceededBreak ? expected - 50 : expected;
@@ -252,8 +256,8 @@ const computeAutoDA = (userDetail) => {
 
         const detail = {
           userId: u.id,
-          name: emailToName[email],
-          email,
+          name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
+          email: emailKey,
           attendancePercent,
           tardinessPercent,
           adherencePercent,
@@ -265,6 +269,9 @@ const computeAutoDA = (userDetail) => {
           firstLogin: firstLogin ? firstLogin.toISOString() : null,
         };
 
+        // Debug: log computed stats for this user
+        console.log(`[DEBUG] Computed stats for ${u.displayName}:`, detail);
+
         if (isRestDay) grouped.restDay.push(detail);
         else if (isLeave) grouped.leave.push(detail);
         else if (tardyCount > 0) grouped.tardy.push(detail);
@@ -272,7 +279,6 @@ const computeAutoDA = (userDetail) => {
         else grouped.absent.push(detail);
       });
 
-      // --- Compute auto DA ---
       const allUsers = [...grouped.present, ...grouped.tardy, ...grouped.absent];
       const autoDARecords = {};
       allUsers.forEach((u) => {
@@ -285,15 +291,10 @@ const computeAutoDA = (userDetail) => {
       });
       setDisciplinaryRecords(autoDARecords);
 
-      // Compute overall stats for charts
       const totalUsers = validUsers.length;
       const presentCount = grouped.present.length + grouped.tardy.length;
       const overallAttendance =
         totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
-      const overallTardiness =
-        presentCount > 0
-          ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
-          : 0;
 
       let adherenceSum = 0;
       let adherenceUsers = 0;
@@ -303,6 +304,11 @@ const computeAutoDA = (userDetail) => {
       });
       const overallAdherence =
         adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 100;
+
+      const overallTardiness =
+        presentCount > 0
+          ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
+          : 0;
 
       setDailyStats({
         attendance: overallAttendance,
@@ -317,6 +323,8 @@ const computeAutoDA = (userDetail) => {
 
   fetchStats();
 }, [period, refreshKey]);
+
+
 
 
 
