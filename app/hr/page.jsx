@@ -1,4 +1,4 @@
-// app/overview/page.jsx
+// app/hr/page.jsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,18 +12,31 @@ import Header from "@/components/Header";
 import { Dialog, Disclosure } from "@headlessui/react";
 import { ChevronUpIcon } from "lucide-react";
 import { TEAM_MAP } from "@/lib/teamMap";
+import { SessionProvider, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
-const allowedUsers = [
-  "mdbarreda@innovphil.com",
-  "smbernardo@innovphil.com",
-  "carce@innovphil.com",
-  "aarce@innovphil.com",
-  "jlolfindo@innovphil.com",
-  "ejgonzales@innovphil.com",
-  "sdflores@innovphil.com",
-];
+function OverviewContent() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
 
-export default function OverviewPage() {
+  // Restrict access to HR page (same as assignment page)
+  useEffect(() => {
+    if (status === "loading") return;
+
+    const allowedUsers = [
+      "mdbarreda@innovphil.com",
+      "aarce@innovphil.com",
+      "carce@innovphil.com",
+      "amlinguete@innovphil.com",
+      "mcastilla@innovphil.com",
+      "mjpanotes@innovphil.com",
+      "smbernardo@innovphil.com",
+    ];
+    if (!session || !allowedUsers.includes(session.user.email)) {
+      router.replace("/unauthorized");
+    }
+  }, [session, status, router]);
+
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -31,7 +44,7 @@ export default function OverviewPage() {
     presence: 0,
     attendance: 0,
     tardiness: 0,
-    details: { present: [], tardy: [], absent: [], restDay: [] },
+    details: { present: [], tardy: [], absent: [], restDay: [], leave: [] },
   });
 
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
@@ -44,28 +57,42 @@ export default function OverviewPage() {
   const [showAdherenceModal, setShowAdherenceModal] = useState(false);
   const [period, setPeriod] = useState("daily"); // daily | weekly | monthly
 
+  // Compute automatic DA based on attendance stats
+  const computeAutoDA = (userDetail) => {
+    if (!userDetail) return 0;
 
-// Compute automatic DA based on attendance stats
-const computeAutoDA = (userDetail) => {
-  if (!userDetail) return 0;
+    const { totalTardy, totalPresent, breakMinutes, totalShifts } = userDetail;
 
-  const { totalTardy, totalPresent, breakMinutes, totalShifts } = userDetail;
+    let DA = 0;
 
-  let DA = 0;
+    if (totalTardy >= 4) DA += 1;
+    if ((userDetail.minutesLate ?? 0) > 120) DA += 1;
+    if (totalShifts > 0 && totalTardy + totalPresent === 0) DA += 1;
 
-  // Rule 1: 4 lates in a month
-  if (totalTardy >= 4) DA += 1;
+    return DA;
+  };
 
-  // Rule 2: more than 120 minutes late
-  if ((userDetail.minutesLate ?? 0) > 120) DA += 1;
+  function normalizeShifts(newData) {
+    const normalized = [];
 
-  // Rule 3: absent
-  if (totalShifts > 0 && totalTardy + totalPresent === 0) DA += 1;
+    Object.entries(newData).forEach(([email, dates]) => {
+      Object.entries(dates).forEach(([dateKey, shift]) => {
+        normalized.push({
+          userId: email,
+          date: shift.date,
+          start: shift.start,
+          end: shift.end,
+          note: shift.note,
+          type: shift.type, // Present / Absent / TimeOff etc.
+          clockIn: shift.clockIn || null,
+          clockOut: shift.clockOut || null,
+          breakMinutes: shift.breakMinutes || 0,
+        });
+      });
+    });
 
-  return DA;
-};
-
-
+    return normalized;
+  }
 
   // fetch users and tasks
   useEffect(() => {
@@ -141,194 +168,131 @@ const computeAutoDA = (userDetail) => {
   }, [refreshKey]);
 
   // fetch daily presence & attendance
-useEffect(() => {
-  async function fetchStats() {
-    try {
-      const [shiftsRes, usersRes] = await Promise.all([
-        fetch(`/api/shifts?period=${period}`),
-        fetch("/api/users"),
-      ]);
+  useEffect(() => {
+    async function fetchStats() {
+      try {
+        const [shiftsRes, usersRes] = await Promise.all([
+          fetch(`/api/shifts?period=${period}`),
+          fetch("/api/users"),
+        ]);
 
-      const shiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
-      const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
+        const rawShiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
+        const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
 
-      const validUsers = (usersData.value || []).filter(
-        (u) =>
-          u.jobTitle &&
-          u.jobTitle.trim() !== "" &&
-          !u.jobTitle.toLowerCase().includes("chief")
-      );
+        const validUsers = (usersData.value || []).filter(
+          (u) =>
+            u.jobTitle &&
+            u.jobTitle.trim() !== "" &&
+            !u.jobTitle.toLowerCase().includes("chief")
+        );
 
-      const emailToUser = {};
-      validUsers.forEach(u => {
-        const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-        emailToUser[emailKey] = u;
-      });
+        const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
+        const groupedForCharts = { present: [], tardy: [], absent: [] };
 
-      const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
+        validUsers.forEach((u) => {
+          const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+          const userShiftsObj = rawShiftData.shiftDetailsPerUser?.[emailKey] || {};
 
-      validUsers.forEach((u) => {
-        const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-        let userShifts = shiftData.shiftDetailsPerUser[emailKey] || [];
+          const userShifts = Object.values(userShiftsObj).map((shift) => {
+            const shiftDate = shift.date || shift.start;
+            const shiftBreak = shift.breakMinutes ?? 0;
+            let status = shift.type || "Absent";
 
-        // Debug: log all shifts received for this user
-        console.log(`[DEBUG] User: ${u.displayName} (${emailKey})`, userShifts);
+            // Determine Present/Tardy based on clockIn
+            if (shift.clockIn) {
+              const loginTime = new Date(shift.clockIn);
+              const shiftStart = new Date(shift.start);
+              const cutoff = new Date(shiftStart);
+              cutoff.setHours(8, 31, 0, 0); // 8:31 AM cutoff
 
-        // Deduplicate shifts per day
-        const shiftMap = {};
-        userShifts.forEach((s) => {
-          const day = new Date(s.clockIn || s.start).toISOString().split("T")[0];
-          if (!shiftMap[day]) shiftMap[day] = s;
-          else if (s.clockIn && new Date(s.clockIn) < new Date(shiftMap[day].clockIn)) shiftMap[day] = s;
-        });
-        userShifts = Object.values(shiftMap);
+              status = loginTime <= cutoff ? "Present" : "Tardy";
+            }
 
-        // Debug: log after deduplication
-        console.log(`[DEBUG] Deduplicated shifts for ${u.displayName}:`, userShifts);
+            return {
+              date: shiftDate,
+              status,
+              clockIn: shift.clockIn || null,
+              clockOut: shift.clockOut || null,
+              breakMinutes: shiftBreak,
+            };
+          });
 
-        let firstLogin = null;
-        let totalAdherence = 0;
-        let adherenceCount = 0;
-        let exceededBreak = false;
+          let presentCount = userShifts.filter((s) => s.status === "Present").length;
+          let tardyCount = userShifts.filter((s) => s.status === "Tardy").length;
+          let absentCount = userShifts.filter((s) => s.status === "Absent").length;
 
-        let presentCount = 0;
-        let tardyCount = 0;
-        let absentCount = 0;
-        let isRestDay = false;
-        let isLeave = false;
+          const firstLogin =
+            userShifts
+              .filter((s) => s.clockIn)
+              .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn))[0]?.clockIn || null;
 
-        const shifts = userShifts.map((shift) => {
-          const shiftType = (shift?.shiftType || "").toLowerCase();
-          const noteText = (shift?.note || "").trim().toLowerCase();
-          const shiftBreak = shift.breakMinutes ?? 0;
-
-          if (shiftType.includes("rest day") || shift.isRestDay) isRestDay = true;
-          if (shiftType.includes("leave") || shiftType.includes("sick leave") || shift.isLeave || noteText.includes("leave"))
-            isLeave = true;
-
-          let status = "Absent";
-
-          if (shift.clockIn) {
-            const loginTime = new Date(shift.clockIn);
-            const shiftStart = new Date(shift.start || shift.clockIn);
-
-            const cutoff = new Date(shiftStart);
-            cutoff.setHours(8, 31, 0, 0);
-
-            status = loginTime <= cutoff ? "Present" : "Tardy";
-            if (!firstLogin || loginTime < firstLogin) firstLogin = loginTime;
-
-            if (status === "Present") presentCount++;
-            else tardyCount++;
-          } else {
-            absentCount++;
-          }
-
-          adherenceCount++;
-          totalAdherence += shiftBreak > 75 ? 50 : 100;
-          if (period !== "daily" && shiftBreak > 60) exceededBreak = true;
-
-          return {
-            date: shift.date || shift.start || shift.clockIn,
-            status,
-            firstLogin: shift.clockIn || null,
-            breakMinutes: shiftBreak,
+          const detail = {
+            userId: u.id,
+            name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
+            email: emailKey,
+            totalPresent: presentCount,
+            totalTardy: tardyCount,
+            totalAbsent: absentCount,
+            totalShifts: userShifts.length,
+            shifts: userShifts,
+            firstLogin,
           };
+
+          // Classify for grouped display
+          if (userShifts.some((s) => s.status === "Present")) grouped.present.push(detail);
+          else if (userShifts.some((s) => s.status === "Tardy")) grouped.tardy.push(detail);
+          else grouped.absent.push(detail);
+
+          // Chart grouping (skip rest day / leave if needed)
+          if (userShifts.some((s) => s.status === "Present")) groupedForCharts.present.push(detail);
+          else if (userShifts.some((s) => s.status === "Tardy")) groupedForCharts.tardy.push(detail);
+          else groupedForCharts.absent.push(detail);
         });
 
-        if (period !== "daily" && adherenceCount > 0) {
-          const expected = adherenceCount * 100;
-          totalAdherence = exceededBreak ? expected - 50 : expected;
-        }
+        // Chart percentages
+        const totalCountForCharts =
+          groupedForCharts.present.length +
+          groupedForCharts.tardy.length +
+          groupedForCharts.absent.length;
 
-        const attendancePercent =
-          userShifts.length > 0
-            ? Math.round(((presentCount + tardyCount) / userShifts.length) * 100)
-            : 0;
+        const chartStats = [
+          {
+            name: "Present",
+            value:
+              totalCountForCharts > 0
+                ? Math.round((groupedForCharts.present.length / totalCountForCharts) * 100)
+                : 0,
+          },
+          {
+            name: "Tardy",
+            value:
+              totalCountForCharts > 0
+                ? Math.round((1 - groupedForCharts.tardy.length / totalCountForCharts) * 100)
+                : 0,
+          },
+          {
+            name: "Absent",
+            value:
+              totalCountForCharts > 0
+                ? Math.round((groupedForCharts.absent.length / totalCountForCharts) * 100)
+                : 0,
+          },
+        ];
 
-        const tardinessPercent =
-          presentCount + tardyCount > 0
-            ? Math.round((presentCount / (presentCount + tardyCount)) * 100)
-            : 0;
-
-        const adherencePercent =
-          adherenceCount > 0 ? Math.round(totalAdherence / adherenceCount) : 100;
-
-        const detail = {
-          userId: u.id,
-          name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
-          email: emailKey,
-          attendancePercent,
-          tardinessPercent,
-          adherencePercent,
-          totalPresent: presentCount,
-          totalTardy: tardyCount,
-          totalAbsent: absentCount,
-          totalShifts: shifts.length,
-          shifts,
-          firstLogin: firstLogin ? firstLogin.toISOString() : null,
-        };
-
-        // Debug: log computed stats for this user
-        console.log(`[DEBUG] Computed stats for ${u.displayName}:`, detail);
-
-        if (isRestDay) grouped.restDay.push(detail);
-        else if (isLeave) grouped.leave.push(detail);
-        else if (tardyCount > 0) grouped.tardy.push(detail);
-        else if (presentCount > 0) grouped.present.push(detail);
-        else grouped.absent.push(detail);
-      });
-
-      const allUsers = [...grouped.present, ...grouped.tardy, ...grouped.absent];
-      const autoDARecords = {};
-      allUsers.forEach((u) => {
-        const daCount = computeAutoDA(u);
-        if (daCount > 0) {
-          autoDARecords[u.userId] = Array(daCount)
-            .fill(null)
-            .map((_, i) => ({ action: "Auto DA", _id: `auto-${i}-${u.userId}` }));
-        }
-      });
-      setDisciplinaryRecords(autoDARecords);
-
-      const totalUsers = validUsers.length;
-      const presentCount = grouped.present.length + grouped.tardy.length;
-      const overallAttendance =
-        totalUsers > 0 ? Math.round((presentCount / totalUsers) * 100) : 0;
-
-      let adherenceSum = 0;
-      let adherenceUsers = 0;
-      [...grouped.present, ...grouped.tardy].forEach((u) => {
-        adherenceUsers++;
-        adherenceSum += u.adherencePercent;
-      });
-      const overallAdherence =
-        adherenceUsers > 0 ? Math.round(adherenceSum / adherenceUsers) : 100;
-
-      const overallTardiness =
-        presentCount > 0
-          ? Math.round(((presentCount - grouped.tardy.length) / presentCount) * 100)
-          : 0;
-
-      setDailyStats({
-        attendance: overallAttendance,
-        tardiness: overallTardiness,
-        adherence: overallAdherence,
-        details: grouped,
-      });
-    } catch (err) {
-      console.error("Error fetching stats:", err);
+        setDailyStats({
+          details: grouped,
+          chartStats,
+          attendance: chartStats.find((x) => x.name === "Present")?.value || 0,
+          tardiness: chartStats.find((x) => x.name === "Tardy")?.value || 0,
+          adherence: 100, // you can change this later based on real logic
+        });
+      } catch (err) {
+        console.error("Error fetching stats:", err);
+      }
     }
-  }
 
-  fetchStats();
-}, [period, refreshKey]);
-
-
-
-
-
-
+    fetchStats();
+  }, [period, refreshKey]);
 
   // fetch disciplinary actions
   useEffect(() => {
@@ -354,41 +318,43 @@ useEffect(() => {
 
   // build pieData
   const buildPieData = () => {
-  if (!selectedUser) {
-    return [
-      { name: "Attendance", value: Math.round(dailyStats.attendance || 100) }, 
-      { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
-      { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
-      { name: "Disciplinary Action", value: disciplinaryPercent },
-    ];
-  } else {
-    const userDetail =
-      [...dailyStats.details.present, ...dailyStats.details.tardy, ...dailyStats.details.absent].find(
-        (u) => u.userId === selectedUser.id
-      );
+    if (!selectedUser) {
+      return [
+        { name: "Attendance", value: Math.round(dailyStats.attendance || 100) },
+        { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
+        { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
+        { name: "Disciplinary Action", value: disciplinaryPercent },
+      ];
+    } else {
+      const userDetail = [
+        ...dailyStats.details.present,
+        ...dailyStats.details.tardy,
+        ...dailyStats.details.absent,
+      ].find((u) => u.userId === selectedUser.id);
 
-    const attendanceVal = userDetail ? 100 : 0; 
-    const isTardy = dailyStats.details.tardy.some((u) => u.userId === selectedUser.id);
-    const tardinessVal = isTardy ? 50 : 100;
+      const attendanceVal = userDetail ? 100 : 0;
+      let tardinessVal = 100;
+      if (userDetail) {
+        const { totalTardy, totalShifts } = userDetail;
+        tardinessVal = totalShifts > 0 ? Math.round((1 - totalTardy / totalShifts) * 100) : 100;
+      }
 
-    
-    let adherenceVal = 100;
-    if (userDetail) {
-      adherenceVal = userDetail.breakMinutes > 75 ? 50 : 100;
+      let adherenceVal = 100;
+      if (userDetail) {
+        adherenceVal = userDetail.breakMinutes > 75 ? 50 : 100;
+      }
+
+      const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
+      const daVal = hasDA ? 0 : 100;
+
+      return [
+        { name: "Attendance", value: attendanceVal },
+        { name: "Tardiness", value: tardinessVal },
+        { name: "Adherence", value: adherenceVal },
+        { name: "Disciplinary Action", value: daVal },
+      ];
     }
-
-    const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
-    const daVal = hasDA ? 0 : 100;
-
-    return [
-      { name: "Attendance", value: attendanceVal },
-      { name: "Tardiness", value: tardinessVal },
-      { name: "Adherence", value: adherenceVal }, 
-      { name: "Disciplinary Action", value: daVal },
-    ];
-  }
-};
-
+  };
 
   const pieData = buildPieData();
 
@@ -421,42 +387,48 @@ useEffect(() => {
     groupedByDept[dept].push(u);
   });
 
+  // Refresh DA from backend
+  const refreshDA = async () => {
+    try {
+      const res = await fetch("/api/disciplinary");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setDisciplinaryRecords(data || {});
+    } catch (err) {
+      console.error("refreshDA error", err);
+    }
+  };
 
-// Refresh DA from backend
-const refreshDA = async () => {
-  try {
-    const res = await fetch("/api/disciplinary");
-    if (!res.ok) throw new Error("Failed to fetch");
-    const data = await res.json();
-    setDisciplinaryRecords(data || {});
-  } catch (err) {
-    console.error("refreshDA error", err);
-  }
-};
+  const handleDeleteDA = async (id) => {
+    if (!id) return;
+    const ok = window.confirm("Remove this disciplinary action?");
+    if (!ok) return;
 
-const handleDeleteDA = async (id) => {
-  if (!id) return;
-  const ok = window.confirm("Remove this disciplinary action?");
-  if (!ok) return;
+    try {
+      const res = await fetch("/api/disciplinary", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) throw new Error("Delete failed " + res.status);
 
-  try {
-    const res = await fetch("/api/disciplinary", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    if (!res.ok) throw new Error("Delete failed " + res.status);
+      await refreshDA(); // refetch DAs after delete
+    } catch (err) {
+      console.error("handleDeleteDA error", err);
+      alert("Failed to delete disciplinary action — please try again.");
+    }
+  };
 
-    await refreshDA(); // refetch DAs after delete
-  } catch (err) {
-    console.error("handleDeleteDA error", err);
-    alert("Failed to delete disciplinary action — please try again.");
-  }
-};
+  const presentList = [...dailyStats.details.present, ...dailyStats.details.tardy];
 
+  const absentList = dailyStats.details.absent || [];
 
+  const leaveRestList = [
+    ...dailyStats.details.restDay,
+    ...dailyStats.details.leave,
+  ];
 
-
+  if (status === "loading") return <p>Loading...</p>;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -483,20 +455,19 @@ const handleDeleteDA = async (id) => {
           </div>
 
           {/* Period Filter */}
-<div className="flex gap-2 mb-4">
-  {["daily", "weekly", "monthly"].map((p) => (
-    <button
-      key={p}
-      onClick={() => setPeriod(p)}
-      className={`px-3 py-1 rounded ${
-        period === p ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-700"
-      }`}
-    >
-      {p.charAt(0).toUpperCase() + p.slice(1)}
-    </button>
-  ))}
-</div>
-
+          <div className="flex gap-2 mb-4">
+            {["daily", "weekly", "monthly"].map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1 rounded ${
+                  period === p ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-700"
+                }`}
+              >
+                {p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {pieData.map((item) => (
@@ -600,6 +571,7 @@ const handleDeleteDA = async (id) => {
 
         
 
+
         {/* Attendance Modal */}
 <Dialog
   open={showAttendanceModal}
@@ -610,54 +582,101 @@ const handleDeleteDA = async (id) => {
   <div className="fixed inset-0 flex items-center justify-center p-4">
     <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
       <Dialog.Title className="text-lg font-semibold text-gray-800">
-        Attendance
+        Attendance Breakdown
       </Dialog.Title>
 
-      <div className="mt-4 space-y-4 max-h-80 overflow-y-auto">
-        {["present", "tardy", "absent", "restDay", "leave"].map((status) => {
-          const usersList = dailyStats.details[status] || [];
-          if (!usersList.length) return null;
+      <div className="mt-4 space-y-6 max-h-80 overflow-y-auto">
 
-          const colorMap = {
-            present: "green",
-            tardy: "yellow",
-            absent: "red",
-            restDay: "blue",
-            leave: "purple",
-          };
+        {/* PRESENT (includes TARDY) */}
+        {presentList.length > 0 && (
+          <div>
+            <h4 className="font-medium text-green-600 mb-2">
+              Present ({presentList.length})
+            </h4>
+            <ul className="space-y-2">
+              {presentList.map((u) => (
+                <li
+                  key={u.userId}
+                  className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm"
+                >
+                  <p className="font-medium text-gray-800">{u.name}</p>
+                  <ul className="ml-4 mt-1 text-gray-700 list-disc">
+                    {u.shifts.map((s, idx) => (
+                      <li key={idx}>
+                        {new Date(s.date).toLocaleDateString()} — {s.type}
+                        {s.clockIn && (
+                          <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                        )}
+                        {s.clockOut && (
+                          <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                        )}
+                        {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-          return (
-            <div key={status}>
-              <h4 className={`font-medium text-${colorMap[status]}-600 mb-2`}>
-                {status.charAt(0).toUpperCase() + status.slice(1)} ({usersList.length})
-              </h4>
-              <ul className="space-y-1">
-                {usersList.map((u) => (
-                  <li
-                    key={u.userId}
-                    className={`flex flex-col text-sm p-2 rounded-lg bg-${colorMap[status]}-50 border border-${colorMap[status]}-200`}
-                  >
-                    <span className="font-medium text-gray-700">{u.name}</span>
-                    <ul className="ml-4 list-disc text-gray-600">
-  {(u.shifts || []).map((s, idx) => (
-  <li key={idx}>
-    {new Date(s.date).toLocaleDateString()} - {s.status}
-    {s.firstLogin && ` (Login: ${new Date(s.firstLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
-  </li>
-))}
+        {/* ABSENT */}
+        {absentList.length > 0 && (
+          <div>
+            <h4 className="font-medium text-red-600 mb-2">
+              Absent ({absentList.length})
+            </h4>
+            <ul className="space-y-2">
+              {absentList.map((u) => (
+                <li
+                  key={u.userId}
+                  className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm"
+                >
+                  <p className="font-medium text-gray-800">{u.name}</p>
+                  <ul className="ml-4 mt-1 list-disc text-gray-700">
+                    {u.shifts.map((s, idx) => (
+                      <li key={idx}>
+                        {new Date(s.date).toLocaleDateString()} — Absent
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-</ul>
+        {/* LEAVE + REST DAY */}
+        {leaveRestList.length > 0 && (
+          <div>
+            <h4 className="font-medium text-blue-600 mb-2">
+              Leave / Rest Day ({leaveRestList.length})
+            </h4>
+            <ul className="space-y-2">
+              {leaveRestList.map((u) => (
+                <li
+                  key={u.userId}
+                  className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm"
+                >
+                  <p className="font-medium text-gray-800">{u.name}</p>
+                  <ul className="ml-4 mt-1 list-disc text-gray-700">
+                    {u.shifts.map((s, idx) => (
+                      <li key={idx}>
+                        {new Date(s.date).toLocaleDateString()} — {s.type}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-                  </li>
-                ))}
-              </ul>
-            </div>
-          );
-        })}
       </div>
     </Dialog.Panel>
   </div>
 </Dialog>
+
 
 
 
@@ -887,5 +906,13 @@ const handleDeleteDA = async (id) => {
 </Dialog>
       </div>
     </div>
+  );
+}
+
+export default function OverviewPage() {
+  return (
+    <SessionProvider>
+      <OverviewContent />
+    </SessionProvider>
   );
 }
