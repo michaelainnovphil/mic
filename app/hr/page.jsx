@@ -342,47 +342,61 @@ function OverviewContent() {
   const disciplinaryPercent =
     totalUsers > 0 ? Math.round(((totalUsers - usersWithDA) / totalUsers) * 100) : 100;
 
-  // build pieData
-  const buildPieData = useCallback(() => {
-    if (!selectedUser) {
+ // build pieData (memoized for better performance and reactivity)
+const buildPieData = useMemo(() => {
+  if (!selectedUser) {
+    // Overall stats (unchanged)
+    return [
+      { name: "Attendance", value: Math.round(dailyStats.attendance || 100) },
+      { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
+      { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
+      { name: "Disciplinary Action", value: disciplinaryPercent },
+    ];
+  } else {
+    // Per-user stats
+    const userDetail = [
+      ...dailyStats.details.present,
+      ...dailyStats.details.tardy,
+      ...dailyStats.details.absent,
+    ].find((u) => u.userId === selectedUser.id);
+
+    if (!userDetail) {
+      // Fallback if user not found
       return [
-        { name: "Attendance", value: Math.round(dailyStats.attendance || 100) },
-        { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
-        { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
-        { name: "Disciplinary Action", value: disciplinaryPercent },
-      ];
-    } else {
-      const userDetail = [
-        ...dailyStats.details.present,
-        ...dailyStats.details.tardy,
-        ...dailyStats.details.absent,
-      ].find((u) => u.userId === selectedUser.id);
-
-      const attendanceVal = userDetail ? 100 : 0;
-      let tardinessVal = 100;
-      if (userDetail) {
-        const { totalTardy, totalShifts } = userDetail;
-        tardinessVal = totalShifts > 0 ? Math.round((1 - totalTardy / totalShifts) * 100) : 100;
-      }
-
-      let adherenceVal = 100;
-      if (userDetail) {
-        adherenceVal = userDetail.breakMinutes > 75 ? 50 : 100;
-      }
-
-      const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
-      const daVal = hasDA ? 0 : 100;
-
-      return [
-        { name: "Attendance", value: attendanceVal },
-        { name: "Tardiness", value: tardinessVal },
-        { name: "Adherence", value: adherenceVal },
-        { name: "Disciplinary Action", value: daVal },
+        { name: "Attendance", value: 0 },
+        { name: "Tardiness", value: 0 },
+        { name: "Adherence", value: 100 },
+        { name: "Disciplinary Action", value: 100 },
       ];
     }
-  }, [selectedUser, dailyStats, disciplinaryPercent]);
 
-  const pieData = buildPieData();
+    const { totalPresent, totalTardy, totalShifts, shifts } = userDetail;
+
+    // Attendance: 100% if they have at least one present shift, else 0%
+    const attendanceVal = totalPresent > 0 ? 100 : 0;
+
+    // Tardiness: % of shifts that are tardy
+    const tardinessVal = totalShifts > 0 ? Math.round((totalTardy / totalShifts) * 100) : 0;
+
+    // Adherence: 100% if no shifts exceed 75 min break, else 0%
+    const hasExcessBreak = shifts.some((s) => s.breakMinutes > 75);
+    const adherenceVal = hasExcessBreak ? 0 : 100;
+
+    // DA: 100% if no actions, else 0%
+    const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
+    const daVal = hasDA ? 0 : 100;
+
+    return [
+      { name: "Attendance", value: attendanceVal },
+      { name: "Tardiness", value: tardinessVal },
+      { name: "Adherence", value: adherenceVal },
+      { name: "Disciplinary Action", value: daVal },
+    ];
+  }
+}, [selectedUser, dailyStats, disciplinaryPercent, disciplinaryRecords]);
+
+const pieData = buildPieData;
+
 
   const handleAddDA = useCallback(async () => {
     if (!selectedUser || !newDA.trim()) return;
@@ -602,139 +616,154 @@ function OverviewContent() {
 
 
            {/* Attendance Modal */}
-   <Dialog
-     open={showAttendanceModal}
-     onClose={() => setShowAttendanceModal(false)}
-     className="relative z-50"
-   >
-     <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-     <div className="fixed inset-0 flex items-center justify-center p-4">
-       <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-         <Dialog.Title className="text-lg font-semibold text-gray-800">
-           Attendance Breakdown
-         </Dialog.Title>
+<Dialog
+  open={showAttendanceModal}
+  onClose={() => setShowAttendanceModal(false)}
+  className="relative z-50"
+>
+  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+  <div className="fixed inset-0 flex items-center justify-center p-4">
+    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
+      <Dialog.Title className="text-lg font-semibold text-gray-800">
+        {selectedUser ? `${selectedUser.name}'s Attendance` : "Attendance Breakdown"}
+      </Dialog.Title>
 
-         <div className="mt-4 space-y-6 max-h-80 overflow-y-auto">
-           {/* Get today's date for filtering (only for daily) */}
-           {(() => {
-             const today = new Date().toISOString().split('T')[0];  // YYYY-MM-DD format
-             const isDaily = period === "daily";
+      <div className="mt-4 space-y-6 max-h-80 overflow-y-auto">
+        {(() => {
+          const today = new Date().toISOString().split('T')[0];
+          const isDaily = period === "daily";
 
-             return (
-               <>
-                 {/* PRESENT (includes TARDY) */}
-                 {presentList.length > 0 && (
-                   <div>
-                     <h4 className="font-medium text-green-600 mb-2">
-                       Present ({presentList.length})
-                     </h4>
-                     <ul className="space-y-2">
-                       {presentList.map((u) => {
-                         // Filter shifts: for daily, only today's; for others, all
-                         const filteredShifts = isDaily
-                           ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                           : u.shifts;
+          // Filter users: if selectedUser, only that user; else all
+          const usersToShow = selectedUser
+            ? [presentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+            : presentList;
 
-                         return (
-                           <li
-                             key={u.userId}
-                             className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm"
-                           >
-                             <p className="font-medium text-gray-800">{u.name}</p>
-                             <ul className="ml-4 mt-1 text-gray-700 list-disc">
-                               {filteredShifts.map((s, idx) => (
-                                 <li key={idx}>
-                                   {new Date(s.date).toLocaleDateString()} — {s.type}
-                                   {s.clockIn && (
-                                     <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                                   )}
-                                   {s.clockOut && (
-                                     <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                                   )}
-                                   {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
-                                 </li>
-                               ))}
-                             </ul>
-                           </li>
-                         );
-                       })}
-                     </ul>
-                   </div>
-                 )}
+          return (
+            <>
+              {/* PRESENT (includes TARDY) */}
+              {usersToShow.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-green-600 mb-2">
+                    Present ({usersToShow.length})
+                  </h4>
+                  <ul className="space-y-2">
+                    {usersToShow.map((u) => {
+                      const filteredShifts = isDaily
+                        ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                        : u.shifts;
 
-                 {/* ABSENT */}
-                 {absentList.length > 0 && (
-                   <div>
-                     <h4 className="font-medium text-red-600 mb-2">
-                       Absent ({absentList.length})
-                     </h4>
-                     <ul className="space-y-2">
-                       {absentList.map((u) => {
-                         const filteredShifts = isDaily
-                           ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                           : u.shifts;
+                      return (
+                        <li
+                          key={u.userId}
+                          className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm"
+                        >
+                          <p className="font-medium text-gray-800">{u.name}</p>
+                          <ul className="ml-4 mt-1 text-gray-700 list-disc">
+                            {filteredShifts.map((s, idx) => (
+                              <li key={idx}>
+                                {new Date(s.date).toLocaleDateString()} — {s.type}
+                                {s.clockIn && (
+                                  <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                                )}
+                                {s.clockOut && (
+                                  <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                                )}
+                                {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
 
-                         return (
-                           <li
-                             key={u.userId}
-                             className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm"
-                           >
-                             <p className="font-medium text-gray-800">{u.name}</p>
-                             <ul className="ml-4 mt-1 list-disc text-gray-700">
-                               {filteredShifts.map((s, idx) => (
-                                 <li key={idx}>
-                                   {new Date(s.date).toLocaleDateString()} — Absent
-                                 </li>
-                               ))}
-                             </ul>
-                           </li>
-                         );
-                       })}
-                     </ul>
-                   </div>
-                 )}
+              {/* ABSENT */}
+              {(() => {
+                const absentUsersToShow = selectedUser
+                  ? [absentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+                  : absentList;
 
-                 {/* LEAVE + REST DAY */}
-                 {leaveRestList.length > 0 && (
-                   <div>
-                     <h4 className="font-medium text-blue-600 mb-2">
-                       Leave / Rest Day ({leaveRestList.length})
-                     </h4>
-                     <ul className="space-y-2">
-                       {leaveRestList.map((u) => {
-                         const filteredShifts = isDaily
-                           ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                           : u.shifts;
+                return absentUsersToShow.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-red-600 mb-2">
+                      Absent ({absentUsersToShow.length})
+                    </h4>
+                    <ul className="space-y-2">
+                      {absentUsersToShow.map((u) => {
+                        const filteredShifts = isDaily
+                          ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                          : u.shifts;
 
-                         return (
-                           <li
-                             key={u.userId}
-                             className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm"
-                           >
-                             <p className="font-medium text-gray-800">{u.name}</p>
-                             <ul className="ml-4 mt-1 list-disc text-gray-700">
-                               {filteredShifts.map((s, idx) => (
-                                 <li key={idx}>
-                                   {new Date(s.date).toLocaleDateString()} — {s.type}
-                                 </li>
-                               ))}
-                             </ul>
-                           </li>
-                         );
-                       })}
-                     </ul>
-                   </div>
-                 )}
-               </>
-             );
-           })()}
-         </div>
-       </Dialog.Panel>
-     </div>
-   </Dialog>
+                        return (
+                          <li
+                            key={u.userId}
+                            className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm"
+                          >
+                            <p className="font-medium text-gray-800">{u.name}</p>
+                            <ul className="ml-4 mt-1 list-disc text-gray-700">
+                              {filteredShifts.map((s, idx) => (
+                                <li key={idx}>
+                                  {new Date(s.date).toLocaleDateString()} — Absent
+                                </li>
+                              ))}
+                            </ul>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })()}
+
+              {/* LEAVE + REST DAY */}
+              {(() => {
+                const leaveUsersToShow = selectedUser
+                  ? [leaveRestList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+                  : leaveRestList;
+
+                return leaveUsersToShow.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-blue-600 mb-2">
+                      Leave / Rest Day ({leaveUsersToShow.length})
+                    </h4>
+                    <ul className="space-y-2">
+                      {leaveUsersToShow.map((u) => {
+                        const filteredShifts = isDaily
+                          ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                          : u.shifts;
+
+                        return (
+                          <li
+                            key={u.userId}
+                            className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm"
+                          >
+                            <p className="font-medium text-gray-800">{u.name}</p>
+                            <ul className="ml-4 mt-1 list-disc text-gray-700">
+                              {filteredShifts.map((s, idx) => (
+                                <li key={idx}>
+                                  {new Date(s.date).toLocaleDateString()} — {s.type}
+                                </li>
+                              ))}
+                            </ul>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })()}
+            </>
+          );
+        })()}
+      </div>
+    </Dialog.Panel>
+  </div>
+</Dialog>
 
 
-        {/* Tardiness Modal */}
+       {/* Tardiness Modal */}
 <Dialog
   open={showTardinessModal}
   onClose={() => setShowTardinessModal(false)}
@@ -744,18 +773,22 @@ function OverviewContent() {
   <div className="fixed inset-0 flex items-center justify-center p-4">
     <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
       <Dialog.Title className="text-lg font-semibold">
-        Tardiness
+        {selectedUser ? `${selectedUser.name}'s Tardiness` : "Tardiness"}
       </Dialog.Title>
 
-      {/* Filter users who have at least one tardy shift */}
       {(() => {
         const tardyUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
           (u) => u.shifts.some((s) => s.status === "Tardy")
         );
 
-        return tardyUsers.length > 0 ? (
+        // Filter to selected user if set
+        const usersToShow = selectedUser
+          ? tardyUsers.filter((u) => u.userId === selectedUser.id)
+          : tardyUsers;
+
+        return usersToShow.length > 0 ? (
           <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-            {tardyUsers.map((u) => (
+            {usersToShow.map((u) => (
               <li
                 key={u.userId}
                 className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
@@ -763,7 +796,7 @@ function OverviewContent() {
                 <span className="font-medium">{u.name}</span>
                 <ul className="ml-4 list-disc text-yellow-700">
                   {u.shifts
-                    .filter((s) => s.status === "Tardy")  // Only show tardy shifts
+                    .filter((s) => s.status === "Tardy")
                     .map((s, idx) => (
                       <li key={idx}>
                         {s.date
@@ -799,7 +832,7 @@ function OverviewContent() {
 </Dialog>
 
 
-        {/* Adherence Modal */}
+         {/* Adherence Modal */}
 <Dialog
   open={showAdherenceModal}
   onClose={() => setShowAdherenceModal(false)}
@@ -809,16 +842,22 @@ function OverviewContent() {
   <div className="fixed inset-0 flex items-center justify-center p-4">
     <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
       <Dialog.Title className="text-lg font-semibold">
-        Adherence
+        {selectedUser ? `${selectedUser.name}'s Adherence` : "Adherence"}
       </Dialog.Title>
 
-      {([...dailyStats.details.present, ...dailyStats.details.tardy]
-        .filter(u => u.shifts.some(s => s.breakMinutes > 75))
-        .length > 0) ? (
-        <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-          {[...dailyStats.details.present, ...dailyStats.details.tardy]
-            .filter(u => u.shifts.some(s => s.breakMinutes > 75))
-            .map((u) => (
+      {(() => {
+        const adherenceUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
+          (u) => u.shifts.some((s) => s.breakMinutes > 75)
+        );
+
+        // Filter to selected user if set
+        const usersToShow = selectedUser
+          ? adherenceUsers.filter((u) => u.userId === selectedUser.id)
+          : adherenceUsers;
+
+        return usersToShow.length > 0 ? (
+          <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
+            {usersToShow.map((u) => (
               <li
                 key={u.userId}
                 className="flex flex-col text-sm p-3 rounded bg-red-50 border border-red-200"
@@ -826,7 +865,7 @@ function OverviewContent() {
                 <span className="font-medium">{u.name}</span>
                 <ul className="ml-4 list-disc text-red-700">
                   {u.shifts
-                    .filter(s => s.breakMinutes > 75)
+                    .filter((s) => s.breakMinutes > 75)
                     .map((s, idx) => (
                       <li key={idx}>
                         {s.date
@@ -838,12 +877,13 @@ function OverviewContent() {
                 </ul>
               </li>
             ))}
-        </ul>
-      ) : (
-        <p className="mt-2 text-sm text-gray-500">
-          No employees exceeded the break limit
-        </p>
-      )}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-gray-500">
+            No employees exceeded the break limit
+          </p>
+        );
+      })()}
 
       <div className="mt-4 flex justify-end">
         <button
