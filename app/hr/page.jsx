@@ -1,7 +1,7 @@
 // app/hr/page.jsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";  // Added useCallback, useMemo
 import {
   PieChart,
   Pie,
@@ -56,9 +56,18 @@ function OverviewContent() {
   const [newDA, setNewDA] = useState("");
   const [showAdherenceModal, setShowAdherenceModal] = useState(false);
   const [period, setPeriod] = useState("daily"); // daily | weekly | monthly
+  const [loadingStats, setLoadingStats] = useState(false);  // For stats loading
+  const [cachedData, setCachedData] = useState({});  // Cache for fetched data
+  const [debouncedPeriod, setDebouncedPeriod] = useState(period);  // Debounced period
+
+  // Debounce period changes (500ms delay to prevent rapid switches)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedPeriod(period), 500);
+    return () => clearTimeout(timer);
+  }, [period]);
 
   // Compute automatic DA based on attendance stats
-  const computeAutoDA = (userDetail) => {
+  const computeAutoDA = useCallback((userDetail) => {
     if (!userDetail) return 0;
 
     const { totalTardy, totalPresent, breakMinutes, totalShifts } = userDetail;
@@ -70,7 +79,7 @@ function OverviewContent() {
     if (totalShifts > 0 && totalTardy + totalPresent === 0) DA += 1;
 
     return DA;
-  };
+  }, []);
 
   function normalizeShifts(newData) {
     const normalized = [];
@@ -94,7 +103,7 @@ function OverviewContent() {
     return normalized;
   }
 
-  // fetch users and tasks
+  // fetch users and tasks (unchanged, but could be cached if needed)
   useEffect(() => {
     async function fetchUsersAndTasks() {
       try {
@@ -167,150 +176,151 @@ function OverviewContent() {
     fetchUsersAndTasks();
   }, [refreshKey]);
 
-  // fetch daily presence & attendance
-useEffect(() => {
-  async function fetchStats() {
-    try {
-      const [shiftsRes, usersRes] = await Promise.all([
-        fetch(`/api/shifts?period=${period}`),
-        fetch("/api/users"),
-      ]);
+  // Memoized stats computation (only re-runs if cachedData or debouncedPeriod changes)
+  const computedStats = useMemo(() => {
+    if (!cachedData[debouncedPeriod]) return null;
 
-      const rawShiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
-      const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
+    const { rawShiftData, usersData } = cachedData[debouncedPeriod];
+    const validUsers = (usersData.value || []).filter(
+      (u) =>
+        u.jobTitle &&
+        u.jobTitle.trim() !== "" &&
+        !u.jobTitle.toLowerCase().includes("chief")
+    );
 
-      const validUsers = (usersData.value || []).filter(
-        (u) =>
-          u.jobTitle &&
-          u.jobTitle.trim() !== "" &&
-          !u.jobTitle.toLowerCase().includes("chief")
-      );
+    const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
+    const groupedForCharts = { present: [], tardy: [], absent: [] };
+    let nonAdherentCount = 0;
 
-      const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
-      const groupedForCharts = { present: [], tardy: [], absent: [] };
+    validUsers.forEach((u) => {
+      const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+      const userShiftsObj = rawShiftData.shiftDetailsPerUser?.[emailKey] || {};
 
-      // Track non-adherent users for adherence calculation
-      let nonAdherentCount = 0;
+      const userShifts = Object.values(userShiftsObj).map((shift) => {
+        const shiftDate = shift.date || shift.start;
+        const shiftBreak = shift.breakMinutes ?? 0;
+        let status = shift.type || "Absent";
 
-      validUsers.forEach((u) => {
-        const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-        const userShiftsObj = rawShiftData.shiftDetailsPerUser?.[emailKey] || {};
+        if (shift.clockIn) {
+          const loginTime = new Date(shift.clockIn);
+          const shiftStart = new Date(shift.start);
+          const cutoff = new Date(shiftStart);
+          cutoff.setHours(8, 31, 0, 0);
 
-        const userShifts = Object.values(userShiftsObj).map((shift) => {
-          const shiftDate = shift.date || shift.start;
-          const shiftBreak = shift.breakMinutes ?? 0;
-          let status = shift.type || "Absent";
+          status = loginTime <= cutoff ? "Present" : "Tardy";
+        }
 
-          // Determine Present/Tardy based on clockIn
-          if (shift.clockIn) {
-            const loginTime = new Date(shift.clockIn);
-            const shiftStart = new Date(shift.start);
-            const cutoff = new Date(shiftStart);
-            cutoff.setHours(8, 31, 0, 0); // 8:31 AM cutoff
-
-            status = loginTime <= cutoff ? "Present" : "Tardy";
-          }
-
-          return {
-            date: shiftDate,
-            status,
-            clockIn: shift.clockIn || null,
-            clockOut: shift.clockOut || null,
-            breakMinutes: shiftBreak,
-          };
-        });
-
-        let presentCount = userShifts.filter((s) => s.status === "Present").length;
-        let tardyCount = userShifts.filter((s) => s.status === "Tardy").length;
-        let absentCount = userShifts.filter((s) => s.status === "Absent").length;
-
-        const firstLogin =
-          userShifts
-            .filter((s) => s.clockIn)
-            .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn))[0]?.clockIn || null;
-
-        const detail = {
-          userId: u.id,
-          name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
-          email: emailKey,
-          totalPresent: presentCount,
-          totalTardy: tardyCount,
-          totalAbsent: absentCount,
-          totalShifts: userShifts.length,
-          shifts: userShifts,
-          firstLogin,
+        return {
+          date: shiftDate,
+          status,
+          clockIn: shift.clockIn || null,
+          clockOut: shift.clockOut || null,
+          breakMinutes: shiftBreak,
         };
-
-        // Classify for grouped display
-        if (userShifts.some((s) => s.status === "Present")) grouped.present.push(detail);
-        else if (userShifts.some((s) => s.status === "Tardy")) grouped.tardy.push(detail);
-        else grouped.absent.push(detail);
-
-        // Chart grouping (skip rest day / leave if needed)
-        if (userShifts.some((s) => s.status === "Present")) groupedForCharts.present.push(detail);
-        else if (userShifts.some((s) => s.status === "Tardy")) groupedForCharts.tardy.push(detail);
-        else groupedForCharts.absent.push(detail);
-
-        // Check for adherence (non-adherent if any shift exceeds 75 min break)
-        const hasExcessBreak = userShifts.some((s) => s.breakMinutes > 75);
-        if (hasExcessBreak) nonAdherentCount++;
       });
 
-      // Chart percentages (aligned with modal logic)
-      const totalCountForCharts =
-        groupedForCharts.present.length +
-        groupedForCharts.tardy.length +
-        groupedForCharts.absent.length;
+      let presentCount = userShifts.filter((s) => s.status === "Present").length;
+      let tardyCount = userShifts.filter((s) => s.status === "Tardy").length;
+      let absentCount = userShifts.filter((s) => s.status === "Absent").length;
+      const firstLogin = userShifts
+        .filter((s) => s.clockIn)
+        .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn))[0]?.clockIn || null;
 
-      // Count users with at least one tardy shift (from present + tardy groups)
-      const tardyCount = [...groupedForCharts.present, ...groupedForCharts.tardy].filter(
-        (u) => u.shifts.some((s) => s.status === "Tardy")
-      ).length;
+      const detail = {
+        userId: u.id,
+        name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
+        email: emailKey,
+        totalPresent: presentCount,
+        totalTardy: tardyCount,
+        totalAbsent: absentCount,
+        totalShifts: userShifts.length,
+        shifts: userShifts,
+        firstLogin,
+      };
 
-      const chartStats = [
-        {
-          name: "Present",
-          value:
-            totalCountForCharts > 0
-              ? Math.round((groupedForCharts.present.length / totalCountForCharts) * 100)
-              : 0,
-        },
-        {
-          name: "Tardy",
-          value:
-            totalCountForCharts > 0
-              ? Math.round((tardyCount / totalCountForCharts) * 100)  // Now matches modal: % with tardy shifts
-              : 0,
-        },
-        {
-          name: "Absent",
-          value:
-            totalCountForCharts > 0
-              ? Math.round((groupedForCharts.absent.length / totalCountForCharts) * 100)
-              : 0,
-        },
-      ];
-      // Compute adherence percentage
-      const totalUsers = validUsers.length;
-      const adherencePercent =
-        totalUsers > 0 ? Math.round(((totalUsers - nonAdherentCount) / totalUsers) * 100) : 100;
+      if (userShifts.some((s) => s.status === "Present")) grouped.present.push(detail);
+      else if (userShifts.some((s) => s.status === "Tardy")) grouped.tardy.push(detail);
+      else grouped.absent.push(detail);
 
-      setDailyStats({
-        details: grouped,
-        chartStats,
-        attendance: chartStats.find((x) => x.name === "Present")?.value || 0,
-        tardiness: chartStats.find((x) => x.name === "Tardy")?.value || 0,
-        adherence: adherencePercent,  // FIXED: Now dynamically calculated
-      });
-    } catch (err) {
-      console.error("Error fetching stats:", err);
+      if (userShifts.some((s) => s.status === "Present")) groupedForCharts.present.push(detail);
+      else if (userShifts.some((s) => s.status === "Tardy")) groupedForCharts.tardy.push(detail);
+      else groupedForCharts.absent.push(detail);
+
+      const hasExcessBreak = userShifts.some((s) => s.breakMinutes > 75);
+      if (hasExcessBreak) nonAdherentCount++;
+    });
+
+    const totalCountForCharts =
+      groupedForCharts.present.length +
+      groupedForCharts.tardy.length +
+      groupedForCharts.absent.length;
+
+    const tardyCount = [...groupedForCharts.present, ...groupedForCharts.tardy].filter(
+      (u) => u.shifts.some((s) => s.status === "Tardy")
+    ).length;
+
+    const chartStats = [
+      {
+        name: "Present",
+        value: totalCountForCharts > 0 ? Math.round((groupedForCharts.present.length / totalCountForCharts) * 100) : 0,
+      },
+      {
+        name: "Tardy",
+        value: totalCountForCharts > 0 ? Math.round((tardyCount / totalCountForCharts) * 100) : 0,
+      },
+      {
+        name: "Absent",
+        value: totalCountForCharts > 0 ? Math.round((groupedForCharts.absent.length / totalCountForCharts) * 100) : 0,
+      },
+    ];
+
+    const totalUsers = validUsers.length;
+    const adherencePercent = totalUsers > 0 ? Math.round(((totalUsers - nonAdherentCount) / totalUsers) * 100) : 100;
+
+    return {
+      details: grouped,
+      chartStats,
+      attendance: chartStats.find((x) => x.name === "Present")?.value || 0,
+      tardiness: chartStats.find((x) => x.name === "Tardy")?.value || 0,
+      adherence: adherencePercent,
+    };
+  }, [cachedData, debouncedPeriod]);
+
+  // Fetch and cache data only if not already cached
+  useEffect(() => {
+    async function fetchStats() {
+      if (cachedData[debouncedPeriod]) {
+        setDailyStats(computedStats);
+        return;
+      }
+
+      setLoadingStats(true);
+      try {
+        const [shiftsRes, usersRes] = await Promise.all([
+          fetch(`/api/shifts?period=${debouncedPeriod}`),
+          fetch("/api/users"),
+        ]);
+
+        const rawShiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
+        const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
+
+        setCachedData((prev) => ({ ...prev, [debouncedPeriod]: { rawShiftData, usersData } }));
+      } catch (err) {
+        console.error("Error fetching stats:", err);
+      } finally {
+        setLoadingStats(false);
+      }
     }
-  }
 
-  fetchStats();
-}, [period, refreshKey]);
+    fetchStats();
+  }, [debouncedPeriod, refreshKey]);
 
-  // fetch disciplinary actions
+  // Set stats when computed
+  useEffect(() => {
+    if (computedStats) setDailyStats(computedStats);
+  }, [computedStats]);
+
+  // fetch disciplinary actions (unchanged)
   useEffect(() => {
     async function fetchDA() {
       try {
@@ -333,7 +343,7 @@ useEffect(() => {
     totalUsers > 0 ? Math.round(((totalUsers - usersWithDA) / totalUsers) * 100) : 100;
 
   // build pieData
-  const buildPieData = () => {
+  const buildPieData = useCallback(() => {
     if (!selectedUser) {
       return [
         { name: "Attendance", value: Math.round(dailyStats.attendance || 100) },
@@ -370,11 +380,11 @@ useEffect(() => {
         { name: "Disciplinary Action", value: daVal },
       ];
     }
-  };
+  }, [selectedUser, dailyStats, disciplinaryPercent]);
 
   const pieData = buildPieData();
 
-  const handleAddDA = async () => {
+  const handleAddDA = useCallback(async () => {
     if (!selectedUser || !newDA.trim()) return;
     try {
       const res = await fetch("/api/disciplinary", {
@@ -393,18 +403,21 @@ useEffect(() => {
     } catch (err) {
       console.error("Error saving DA", err);
     }
-  };
+  }, [selectedUser, newDA]);
 
   // group users by department
-  const groupedByDept = {};
-  users.forEach((u) => {
-    const dept = TEAM_MAP[u.email?.toLowerCase()] || "Other";
-    if (!groupedByDept[dept]) groupedByDept[dept] = [];
-    groupedByDept[dept].push(u);
-  });
+  const groupedByDept = useMemo(() => {
+    const grouped = {};
+    users.forEach((u) => {
+      const dept = TEAM_MAP[u.email?.toLowerCase()] || "Other";
+      if (!grouped[dept]) grouped[dept] = [];
+      grouped[dept].push(u);
+    });
+    return grouped;
+  }, [users]);
 
   // Refresh DA from backend
-  const refreshDA = async () => {
+  const refreshDA = useCallback(async () => {
     try {
       const res = await fetch("/api/disciplinary");
       if (!res.ok) throw new Error("Failed to fetch");
@@ -413,9 +426,9 @@ useEffect(() => {
     } catch (err) {
       console.error("refreshDA error", err);
     }
-  };
+  }, []);
 
-  const handleDeleteDA = async (id) => {
+  const handleDeleteDA = useCallback(async (id) => {
     if (!id) return;
     const ok = window.confirm("Remove this disciplinary action?");
     if (!ok) return;
@@ -428,12 +441,12 @@ useEffect(() => {
       });
       if (!res.ok) throw new Error("Delete failed " + res.status);
 
-      await refreshDA(); // refetch DAs after delete
+      await refreshDA();
     } catch (err) {
       console.error("handleDeleteDA error", err);
       alert("Failed to delete disciplinary action — please try again.");
     }
-  };
+  }, [refreshDA]);
 
   const presentList = [...dailyStats.details.present, ...dailyStats.details.tardy];
 
@@ -588,117 +601,140 @@ useEffect(() => {
         
 
 
-        {/* Attendance Modal */}
-<Dialog
-  open={showAttendanceModal}
-  onClose={() => setShowAttendanceModal(false)}
-  className="relative z-50"
->
-  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-  <div className="fixed inset-0 flex items-center justify-center p-4">
-    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-      <Dialog.Title className="text-lg font-semibold text-gray-800">
-        Attendance Breakdown
-      </Dialog.Title>
+           {/* Attendance Modal */}
+   <Dialog
+     open={showAttendanceModal}
+     onClose={() => setShowAttendanceModal(false)}
+     className="relative z-50"
+   >
+     <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+     <div className="fixed inset-0 flex items-center justify-center p-4">
+       <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
+         <Dialog.Title className="text-lg font-semibold text-gray-800">
+           Attendance Breakdown
+         </Dialog.Title>
 
-      <div className="mt-4 space-y-6 max-h-80 overflow-y-auto">
+         <div className="mt-4 space-y-6 max-h-80 overflow-y-auto">
+           {/* Get today's date for filtering (only for daily) */}
+           {(() => {
+             const today = new Date().toISOString().split('T')[0];  // YYYY-MM-DD format
+             const isDaily = period === "daily";
 
-        {/* PRESENT (includes TARDY) */}
-        {presentList.length > 0 && (
-          <div>
-            <h4 className="font-medium text-green-600 mb-2">
-              Present ({presentList.length})
-            </h4>
-            <ul className="space-y-2">
-              {presentList.map((u) => (
-                <li
-                  key={u.userId}
-                  className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm"
-                >
-                  <p className="font-medium text-gray-800">{u.name}</p>
-                  <ul className="ml-4 mt-1 text-gray-700 list-disc">
-                    {u.shifts.map((s, idx) => (
-                      <li key={idx}>
-                        {new Date(s.date).toLocaleDateString()} — {s.type}
-                        {s.clockIn && (
-                          <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                        )}
-                        {s.clockOut && (
-                          <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                        )}
-                        {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+             return (
+               <>
+                 {/* PRESENT (includes TARDY) */}
+                 {presentList.length > 0 && (
+                   <div>
+                     <h4 className="font-medium text-green-600 mb-2">
+                       Present ({presentList.length})
+                     </h4>
+                     <ul className="space-y-2">
+                       {presentList.map((u) => {
+                         // Filter shifts: for daily, only today's; for others, all
+                         const filteredShifts = isDaily
+                           ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                           : u.shifts;
 
-        {/* ABSENT */}
-        {absentList.length > 0 && (
-          <div>
-            <h4 className="font-medium text-red-600 mb-2">
-              Absent ({absentList.length})
-            </h4>
-            <ul className="space-y-2">
-              {absentList.map((u) => (
-                <li
-                  key={u.userId}
-                  className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm"
-                >
-                  <p className="font-medium text-gray-800">{u.name}</p>
-                  <ul className="ml-4 mt-1 list-disc text-gray-700">
-                    {u.shifts.map((s, idx) => (
-                      <li key={idx}>
-                        {new Date(s.date).toLocaleDateString()} — Absent
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                         return (
+                           <li
+                             key={u.userId}
+                             className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm"
+                           >
+                             <p className="font-medium text-gray-800">{u.name}</p>
+                             <ul className="ml-4 mt-1 text-gray-700 list-disc">
+                               {filteredShifts.map((s, idx) => (
+                                 <li key={idx}>
+                                   {new Date(s.date).toLocaleDateString()} — {s.type}
+                                   {s.clockIn && (
+                                     <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                                   )}
+                                   {s.clockOut && (
+                                     <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                                   )}
+                                   {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
+                                 </li>
+                               ))}
+                             </ul>
+                           </li>
+                         );
+                       })}
+                     </ul>
+                   </div>
+                 )}
 
-        {/* LEAVE + REST DAY */}
-        {leaveRestList.length > 0 && (
-          <div>
-            <h4 className="font-medium text-blue-600 mb-2">
-              Leave / Rest Day ({leaveRestList.length})
-            </h4>
-            <ul className="space-y-2">
-              {leaveRestList.map((u) => (
-                <li
-                  key={u.userId}
-                  className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm"
-                >
-                  <p className="font-medium text-gray-800">{u.name}</p>
-                  <ul className="ml-4 mt-1 list-disc text-gray-700">
-                    {u.shifts.map((s, idx) => (
-                      <li key={idx}>
-                        {new Date(s.date).toLocaleDateString()} — {s.type}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                 {/* ABSENT */}
+                 {absentList.length > 0 && (
+                   <div>
+                     <h4 className="font-medium text-red-600 mb-2">
+                       Absent ({absentList.length})
+                     </h4>
+                     <ul className="space-y-2">
+                       {absentList.map((u) => {
+                         const filteredShifts = isDaily
+                           ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                           : u.shifts;
 
-      </div>
-    </Dialog.Panel>
-  </div>
-</Dialog>
+                         return (
+                           <li
+                             key={u.userId}
+                             className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm"
+                           >
+                             <p className="font-medium text-gray-800">{u.name}</p>
+                             <ul className="ml-4 mt-1 list-disc text-gray-700">
+                               {filteredShifts.map((s, idx) => (
+                                 <li key={idx}>
+                                   {new Date(s.date).toLocaleDateString()} — Absent
+                                 </li>
+                               ))}
+                             </ul>
+                           </li>
+                         );
+                       })}
+                     </ul>
+                   </div>
+                 )}
+
+                 {/* LEAVE + REST DAY */}
+                 {leaveRestList.length > 0 && (
+                   <div>
+                     <h4 className="font-medium text-blue-600 mb-2">
+                       Leave / Rest Day ({leaveRestList.length})
+                     </h4>
+                     <ul className="space-y-2">
+                       {leaveRestList.map((u) => {
+                         const filteredShifts = isDaily
+                           ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                           : u.shifts;
+
+                         return (
+                           <li
+                             key={u.userId}
+                             className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm"
+                           >
+                             <p className="font-medium text-gray-800">{u.name}</p>
+                             <ul className="ml-4 mt-1 list-disc text-gray-700">
+                               {filteredShifts.map((s, idx) => (
+                                 <li key={idx}>
+                                   {new Date(s.date).toLocaleDateString()} — {s.type}
+                                 </li>
+                               ))}
+                             </ul>
+                           </li>
+                         );
+                       })}
+                     </ul>
+                   </div>
+                 )}
+               </>
+             );
+           })()}
+         </div>
+       </Dialog.Panel>
+     </div>
+   </Dialog>
 
 
-
-
-
-
-        // {/* Tardiness Modal */}
+        {/* Tardiness Modal */}
 <Dialog
   open={showTardinessModal}
   onClose={() => setShowTardinessModal(false)}
