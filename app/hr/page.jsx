@@ -168,131 +168,147 @@ function OverviewContent() {
   }, [refreshKey]);
 
   // fetch daily presence & attendance
-  useEffect(() => {
-    async function fetchStats() {
-      try {
-        const [shiftsRes, usersRes] = await Promise.all([
-          fetch(`/api/shifts?period=${period}`),
-          fetch("/api/users"),
-        ]);
+useEffect(() => {
+  async function fetchStats() {
+    try {
+      const [shiftsRes, usersRes] = await Promise.all([
+        fetch(`/api/shifts?period=${period}`),
+        fetch("/api/users"),
+      ]);
 
-        const rawShiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
-        const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
+      const rawShiftData = shiftsRes.ok ? await shiftsRes.json() : { shiftDetailsPerUser: {} };
+      const usersData = usersRes.ok ? await usersRes.json() : { value: [] };
 
-        const validUsers = (usersData.value || []).filter(
-          (u) =>
-            u.jobTitle &&
-            u.jobTitle.trim() !== "" &&
-            !u.jobTitle.toLowerCase().includes("chief")
-        );
+      const validUsers = (usersData.value || []).filter(
+        (u) =>
+          u.jobTitle &&
+          u.jobTitle.trim() !== "" &&
+          !u.jobTitle.toLowerCase().includes("chief")
+      );
 
-        const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
-        const groupedForCharts = { present: [], tardy: [], absent: [] };
+      const grouped = { present: [], tardy: [], absent: [], restDay: [], leave: [] };
+      const groupedForCharts = { present: [], tardy: [], absent: [] };
 
-        validUsers.forEach((u) => {
-          const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
-          const userShiftsObj = rawShiftData.shiftDetailsPerUser?.[emailKey] || {};
+      // Track non-adherent users for adherence calculation
+      let nonAdherentCount = 0;
 
-          const userShifts = Object.values(userShiftsObj).map((shift) => {
-            const shiftDate = shift.date || shift.start;
-            const shiftBreak = shift.breakMinutes ?? 0;
-            let status = shift.type || "Absent";
+      validUsers.forEach((u) => {
+        const emailKey = (u.mail || u.userPrincipalName || "").toLowerCase();
+        const userShiftsObj = rawShiftData.shiftDetailsPerUser?.[emailKey] || {};
 
-            // Determine Present/Tardy based on clockIn
-            if (shift.clockIn) {
-              const loginTime = new Date(shift.clockIn);
-              const shiftStart = new Date(shift.start);
-              const cutoff = new Date(shiftStart);
-              cutoff.setHours(8, 31, 0, 0); // 8:31 AM cutoff
+        const userShifts = Object.values(userShiftsObj).map((shift) => {
+          const shiftDate = shift.date || shift.start;
+          const shiftBreak = shift.breakMinutes ?? 0;
+          let status = shift.type || "Absent";
 
-              status = loginTime <= cutoff ? "Present" : "Tardy";
-            }
+          // Determine Present/Tardy based on clockIn
+          if (shift.clockIn) {
+            const loginTime = new Date(shift.clockIn);
+            const shiftStart = new Date(shift.start);
+            const cutoff = new Date(shiftStart);
+            cutoff.setHours(8, 31, 0, 0); // 8:31 AM cutoff
 
-            return {
-              date: shiftDate,
-              status,
-              clockIn: shift.clockIn || null,
-              clockOut: shift.clockOut || null,
-              breakMinutes: shiftBreak,
-            };
-          });
+            status = loginTime <= cutoff ? "Present" : "Tardy";
+          }
 
-          let presentCount = userShifts.filter((s) => s.status === "Present").length;
-          let tardyCount = userShifts.filter((s) => s.status === "Tardy").length;
-          let absentCount = userShifts.filter((s) => s.status === "Absent").length;
-
-          const firstLogin =
-            userShifts
-              .filter((s) => s.clockIn)
-              .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn))[0]?.clockIn || null;
-
-          const detail = {
-            userId: u.id,
-            name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
-            email: emailKey,
-            totalPresent: presentCount,
-            totalTardy: tardyCount,
-            totalAbsent: absentCount,
-            totalShifts: userShifts.length,
-            shifts: userShifts,
-            firstLogin,
+          return {
+            date: shiftDate,
+            status,
+            clockIn: shift.clockIn || null,
+            clockOut: shift.clockOut || null,
+            breakMinutes: shiftBreak,
           };
-
-          // Classify for grouped display
-          if (userShifts.some((s) => s.status === "Present")) grouped.present.push(detail);
-          else if (userShifts.some((s) => s.status === "Tardy")) grouped.tardy.push(detail);
-          else grouped.absent.push(detail);
-
-          // Chart grouping (skip rest day / leave if needed)
-          if (userShifts.some((s) => s.status === "Present")) groupedForCharts.present.push(detail);
-          else if (userShifts.some((s) => s.status === "Tardy")) groupedForCharts.tardy.push(detail);
-          else groupedForCharts.absent.push(detail);
         });
 
-        // Chart percentages
-        const totalCountForCharts =
-          groupedForCharts.present.length +
-          groupedForCharts.tardy.length +
-          groupedForCharts.absent.length;
+        let presentCount = userShifts.filter((s) => s.status === "Present").length;
+        let tardyCount = userShifts.filter((s) => s.status === "Tardy").length;
+        let absentCount = userShifts.filter((s) => s.status === "Absent").length;
 
-        const chartStats = [
-          {
-            name: "Present",
-            value:
-              totalCountForCharts > 0
-                ? Math.round((groupedForCharts.present.length / totalCountForCharts) * 100)
-                : 0,
-          },
-          {
-            name: "Tardy",
-            value:
-              totalCountForCharts > 0
-                ? Math.round((1 - groupedForCharts.tardy.length / totalCountForCharts) * 100)
-                : 0,
-          },
-          {
-            name: "Absent",
-            value:
-              totalCountForCharts > 0
-                ? Math.round((groupedForCharts.absent.length / totalCountForCharts) * 100)
-                : 0,
-          },
-        ];
+        const firstLogin =
+          userShifts
+            .filter((s) => s.clockIn)
+            .sort((a, b) => new Date(a.clockIn) - new Date(b.clockIn))[0]?.clockIn || null;
 
-        setDailyStats({
-          details: grouped,
-          chartStats,
-          attendance: chartStats.find((x) => x.name === "Present")?.value || 0,
-          tardiness: chartStats.find((x) => x.name === "Tardy")?.value || 0,
-          adherence: 100, // you can change this later based on real logic
-        });
-      } catch (err) {
-        console.error("Error fetching stats:", err);
-      }
+        const detail = {
+          userId: u.id,
+          name: u.displayName || u.mail || u.userPrincipalName || "Unknown",
+          email: emailKey,
+          totalPresent: presentCount,
+          totalTardy: tardyCount,
+          totalAbsent: absentCount,
+          totalShifts: userShifts.length,
+          shifts: userShifts,
+          firstLogin,
+        };
+
+        // Classify for grouped display
+        if (userShifts.some((s) => s.status === "Present")) grouped.present.push(detail);
+        else if (userShifts.some((s) => s.status === "Tardy")) grouped.tardy.push(detail);
+        else grouped.absent.push(detail);
+
+        // Chart grouping (skip rest day / leave if needed)
+        if (userShifts.some((s) => s.status === "Present")) groupedForCharts.present.push(detail);
+        else if (userShifts.some((s) => s.status === "Tardy")) groupedForCharts.tardy.push(detail);
+        else groupedForCharts.absent.push(detail);
+
+        // Check for adherence (non-adherent if any shift exceeds 75 min break)
+        const hasExcessBreak = userShifts.some((s) => s.breakMinutes > 75);
+        if (hasExcessBreak) nonAdherentCount++;
+      });
+
+      // Chart percentages (aligned with modal logic)
+      const totalCountForCharts =
+        groupedForCharts.present.length +
+        groupedForCharts.tardy.length +
+        groupedForCharts.absent.length;
+
+      // Count users with at least one tardy shift (from present + tardy groups)
+      const tardyCount = [...groupedForCharts.present, ...groupedForCharts.tardy].filter(
+        (u) => u.shifts.some((s) => s.status === "Tardy")
+      ).length;
+
+      const chartStats = [
+        {
+          name: "Present",
+          value:
+            totalCountForCharts > 0
+              ? Math.round((groupedForCharts.present.length / totalCountForCharts) * 100)
+              : 0,
+        },
+        {
+          name: "Tardy",
+          value:
+            totalCountForCharts > 0
+              ? Math.round((tardyCount / totalCountForCharts) * 100)  // Now matches modal: % with tardy shifts
+              : 0,
+        },
+        {
+          name: "Absent",
+          value:
+            totalCountForCharts > 0
+              ? Math.round((groupedForCharts.absent.length / totalCountForCharts) * 100)
+              : 0,
+        },
+      ];
+      // Compute adherence percentage
+      const totalUsers = validUsers.length;
+      const adherencePercent =
+        totalUsers > 0 ? Math.round(((totalUsers - nonAdherentCount) / totalUsers) * 100) : 100;
+
+      setDailyStats({
+        details: grouped,
+        chartStats,
+        attendance: chartStats.find((x) => x.name === "Present")?.value || 0,
+        tardiness: chartStats.find((x) => x.name === "Tardy")?.value || 0,
+        adherence: adherencePercent,  // FIXED: Now dynamically calculated
+      });
+    } catch (err) {
+      console.error("Error fetching stats:", err);
     }
+  }
 
-    fetchStats();
-  }, [period, refreshKey]);
+  fetchStats();
+}, [period, refreshKey]);
 
   // fetch disciplinary actions
   useEffect(() => {
@@ -682,8 +698,8 @@ function OverviewContent() {
 
 
 
-        {/* Tardiness Modal */}
-        <Dialog
+        // {/* Tardiness Modal */}
+<Dialog
   open={showTardinessModal}
   onClose={() => setShowTardinessModal(false)}
   className="relative z-50"
@@ -695,30 +711,44 @@ function OverviewContent() {
         Tardiness
       </Dialog.Title>
 
-      {dailyStats.details.tardy?.length > 0 ? (
-        <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-          {dailyStats.details.tardy.map((u) => (
-            <li
-              key={u.userId}
-              className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
-            >
-              <span className="font-medium">{u.name}</span>
-              <ul className="ml-4 list-disc text-yellow-700">
-                {u.shifts.map((s, idx) => (
-                  <li key={idx}>
-                    {s.date
-                      ? new Date(s.date).toLocaleDateString()
-                      : "N/A"}{" "}
-                    - {s.status} {s.firstLogin && `(Login: ${new Date(s.firstLogin).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-2 text-sm text-gray-500">No tardy employees</p>
-      )}
+      {/* Filter users who have at least one tardy shift */}
+      {(() => {
+        const tardyUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
+          (u) => u.shifts.some((s) => s.status === "Tardy")
+        );
+
+        return tardyUsers.length > 0 ? (
+          <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
+            {tardyUsers.map((u) => (
+              <li
+                key={u.userId}
+                className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
+              >
+                <span className="font-medium">{u.name}</span>
+                <ul className="ml-4 list-disc text-yellow-700">
+                  {u.shifts
+                    .filter((s) => s.status === "Tardy")  // Only show tardy shifts
+                    .map((s, idx) => (
+                      <li key={idx}>
+                        {s.date
+                          ? new Date(s.date).toLocaleDateString()
+                          : "N/A"}{" "}
+                        - {s.status}{" "}
+                        {s.clockIn &&
+                          `(Login: ${new Date(s.clockIn).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })})`}
+                      </li>
+                    ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-sm text-gray-500">No tardy employees</p>
+        );
+      })()}
 
       <div className="mt-4 flex justify-end">
         <button
