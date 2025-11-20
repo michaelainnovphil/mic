@@ -1,5 +1,4 @@
 // app/dashboard/page.jsx
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -11,6 +10,7 @@ export default function UserList() {
   const [shiftStats, setShiftStats] = useState({});
   const [selectedUser, setSelectedUser] = useState(null);
   const [kpiData, setKpiData] = useState(null);
+  const [hrStats, setHrStats] = useState({}); // New state for HR percentages
 
   useEffect(() => {
     async function fetchUserStats() {
@@ -80,7 +80,6 @@ export default function UserList() {
             totalDuration: (taskStats[userEmail]?.durationSeconds || 0) / 3600, // convert to hours
           };
 
-
           if (isChief) {
             chiefsList.push(user);
           } else {
@@ -114,12 +113,32 @@ export default function UserList() {
     fetchKPI();
   }, []);
 
+  // New: Fetch HR stats (percentages only)
+  useEffect(() => {
+    async function fetchHRStats() {
+      try {
+        const period = "daily"; // Or make dynamic
+        const res = await fetch(`/api/public-hr-stats?period=${period}`);
+        const data = await res.json();
+        setHrStats(data.userStats || {});
+      } catch (err) {
+        console.error("Failed to fetch HR stats:", err);
+        setHrStats({});
+      }
+    }
+    fetchHRStats();
+  }, []);
+
   // Helper to get KPI for a user
   function getUserKPI(email) {
     if (!kpiData || !kpiData.users) return null;
-    return kpiData.users.find(
-      (u) => u.email === email
-    );
+    return kpiData.users.find((u) => u.email === email);
+  }
+
+  // Helper to get HR stats for a user
+  function getUserHRStats(email) {
+    const normalizedEmail = email.toLowerCase().trim();
+    return hrStats[normalizedEmail] || null;
   }
 
   return (
@@ -148,6 +167,7 @@ export default function UserList() {
               {chiefs.map((user) => {
                 const email = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
                 const userKPI = getUserKPI(email);
+                const userHR = getUserHRStats(email);
                 return (
                   <div
                     key={user.id}
@@ -174,6 +194,13 @@ export default function UserList() {
                         Utilization: {userKPI.utilizationScore}%
                       </div>
                     )}
+                    {/* HR Stats display */}
+                    {userHR && (
+                      <div className="mt-2 text-xs text-green-900">
+                        Adherence: {userHR.adherence}%<br />
+                        Disciplinary: {userHR.da}%
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -195,6 +222,7 @@ export default function UserList() {
                       {users.slice(i * 2, i * 2 + 2).map((user) => {
                         const email = (user.mail || user.userPrincipalName)?.toLowerCase().trim();
                         const userKPI = getUserKPI(email);
+                        const userHR = getUserHRStats(email);
                         return (
                           <div
                             key={user.id}
@@ -222,6 +250,13 @@ export default function UserList() {
                                   Utilization: {userKPI.utilizationScore}%
                                 </div>
                               )}
+                              {/* HR Stats display */}
+                              {userHR && (
+                                <div className="mt-2 text-xs text-green-900">
+                                  Adherence: {userHR.adherence}%<br />
+                                  Disciplinary: {userHR.da}%
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -233,7 +268,6 @@ export default function UserList() {
             ))
         )}
       </div>
-      
 
       {/* Modal */}
       {selectedUser && (

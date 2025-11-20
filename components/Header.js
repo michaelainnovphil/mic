@@ -8,7 +8,8 @@ const Header = () => {
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
   const [photo, setPhoto] = useState("");
-  const [isAllowed, setIsAllowed] = useState(false); 
+  const [isAllowed, setIsAllowed] = useState(false); // For Assign Task
+  const [isAllowedHR, setIsAllowedHR] = useState(false); // New: For HR page
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -42,7 +43,8 @@ const Header = () => {
           setPhoto(currentUser.photo || "");
           setToken(localStorage.getItem("token") || "");
 
-          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com"]; 
+          // Allowed for Assign Task
+          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com", "mjpanotes@innovphil.com"];
           if (
             allowedEmails.includes(
               currentUser.mail?.toLowerCase() ||
@@ -50,6 +52,17 @@ const Header = () => {
             )
           ) {
             setIsAllowed(true);
+          }
+
+          // Allowed for HR page
+          const allowedHREmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "smbernardo@innovphil.com", "carce@innovphil.com"];
+          if (
+            allowedHREmails.includes(
+              currentUser.mail?.toLowerCase() ||
+                currentUser.userPrincipalName?.toLowerCase()
+            )
+          ) {
+            setIsAllowedHR(true);
           }
         }
       }
@@ -67,12 +80,15 @@ const Header = () => {
 
         {/* Navigation */}
         <nav className="flex items-center gap-6">
-          <Link
-            href="/hr"
-            className="text-gray-700 hover:text-blue-600 font-medium transition"
-          >
-            HR
-          </Link>
+          {/* Conditionally render HR link based on isAllowedHR */}
+          {isAllowedHR && (
+            <Link
+              href="/hr"
+              className="text-gray-700 hover:text-blue-600 font-medium transition"
+            >
+              HR
+            </Link>
+          )}
           <Link
             href="/tasks"
             className="text-gray-700 hover:text-blue-600 font-medium transition"
@@ -92,7 +108,6 @@ const Header = () => {
             Team Overview
           </Link>
 
-          
           {isAllowed && (
             <Link
               href="/assignment"
@@ -111,7 +126,7 @@ const Header = () => {
                 className="w-10 h-10 rounded-full border border-gray-300 cursor-pointer"
               />
               <div className="absolute right-0 mt-2 w-40 bg-white border rounded shadow-md opacity-0 group-hover:opacity-100 transition">
-                
+               
               </div>
             </div>
           )}
