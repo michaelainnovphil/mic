@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
 import Header from "@/components/Header";
-import TaskTimerWidget from "@/components/TaskTimerWidget";
 import { Dialog } from "@headlessui/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"; 
 import { TEAM_MAP } from "@/lib/teamMap";
@@ -368,7 +367,7 @@ function TasksContent() {
               )}
             </div>
           </div>
-          <TaskTimerWidget activeTask={activeTask} />
+         
         </div>
       </div>
 

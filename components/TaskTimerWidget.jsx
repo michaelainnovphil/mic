@@ -159,43 +159,50 @@ export default function TaskTimerWidget() {
   };
 
   useEffect(() => {
-    logsRef.current = JSON.parse(localStorage.getItem("taskLogs")) || [];
+  // Only load saved logs once
+  if (logsRef.current.length === 0) {
+    const saved = localStorage.getItem("taskLogs");
+    if (saved) {
+      logsRef.current = JSON.parse(saved);
+    }
+  }
 
-    startShiftTimer();
+  startShiftTimer();
 
-    const handleStorage = () => {
-      const stored = localStorage.getItem("activeTask");
-      if (!stored) return;
+  const handleStorage = () => {
+    const stored = localStorage.getItem("activeTask");
+    if (!stored) return;
 
-      const { task: newTask, taskType, startTime } = JSON.parse(stored);
-      setTask(newTask);
-      setTaskType(taskType || "");
-      setVisible(true);
+    const { task: newTask, taskType, startTime } = JSON.parse(stored);
+    setTask(newTask);
+    setTaskType(taskType || "");
+    setVisible(true);
 
-      // UPDATED: Only stop the previous task if it's a different task (not resuming the same one).
-      // This prevents accidental stopping on navigation/remount.
-      const isSameTask = prevTaskRef.current && prevTaskRef.current.id === newTask._id;
-      if (prevTaskRef.current && !isSameTask) {
-        console.log("Stopping previous task before resuming new one"); // Optional debug log
-        handleStopTask();
-      }
+    const isSameTask =
+      prevTaskRef.current && prevTaskRef.current.id === newTask._id;
 
-      prevTaskRef.current = {
-        id: newTask._id,
-        title: newTask.title,
-        description: newTask.description,
-        type: taskType || "",
-        assignedTo: newTask.assignedTo || "unknown",
-        startTime: startTime ? new Date(startTime) : new Date(),
-      };
-      console.log("Resumed task:", prevTaskRef.current.title); // Optional debug log
-      startShiftTimer();
+    if (prevTaskRef.current && !isSameTask) {
+      handleStopTask();
+    }
+
+    prevTaskRef.current = {
+      id: newTask._id,
+      title: newTask.title,
+      description: newTask.description,
+      type: taskType || "",
+      assignedTo: newTask.assignedTo || "unknown",
+      startTime: startTime ? new Date(startTime) : new Date(),
     };
 
-    window.addEventListener("storage", handleStorage);
-    handleStorage();
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+    startShiftTimer();
+  };
+
+  window.addEventListener("storage", handleStorage);
+  handleStorage();
+
+  return () => window.removeEventListener("storage", handleStorage);
+}, []);
+
 
   useEffect(() => {
     if (prevTaskRef.current) {
@@ -266,3 +273,5 @@ export default function TaskTimerWidget() {
     </Draggable>
   );
 }
+
+
