@@ -44,7 +44,7 @@ const Header = () => {
           setToken(localStorage.getItem("token") || "");
 
           // Allowed for Assign Task
-          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com", "mjpanotes@innovphil.com"];
+          const allowedEmails = ["mdbarreda@innovphil.com", "aarce@innovphil.com", "carce@innovphil.com", "amlinguete@innovphil.com", "mcastilla@innovphil.com", "mjpanotes@innovphil.com", "mgpajarillo@innovphil.com"];
           if (
             allowedEmails.includes(
               currentUser.mail?.toLowerCase() ||
