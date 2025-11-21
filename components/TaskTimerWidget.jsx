@@ -97,10 +97,8 @@ export default function TaskTimerWidget() {
         console.error("Failed to save log to DB:", err);
       }
     }
-    setVisible(false);
-    setTask(null);
-    setTaskType("");
     logsRef.current = [];
+    localStorage.removeItem("taskLogs");
   };
 
   const handleStopTask = async () => {
@@ -123,9 +121,9 @@ export default function TaskTimerWidget() {
     };
 
     logsRef.current.push(logEntry);
+    localStorage.setItem("taskLogs", JSON.stringify(logsRef.current));
 
     try {
-      // Save log + increment task duration in DB
       await fetch("/api/task-log", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -161,18 +159,26 @@ export default function TaskTimerWidget() {
   };
 
   useEffect(() => {
+    logsRef.current = JSON.parse(localStorage.getItem("taskLogs")) || [];
+
     startShiftTimer();
 
     const handleStorage = () => {
       const stored = localStorage.getItem("activeTask");
       if (!stored) return;
 
-      const { task: newTask, taskType } = JSON.parse(stored);
+      const { task: newTask, taskType, startTime } = JSON.parse(stored);
       setTask(newTask);
       setTaskType(taskType || "");
       setVisible(true);
 
-      if (prevTaskRef.current) handleStopTask();
+      // UPDATED: Only stop the previous task if it's a different task (not resuming the same one).
+      // This prevents accidental stopping on navigation/remount.
+      const isSameTask = prevTaskRef.current && prevTaskRef.current.id === newTask._id;
+      if (prevTaskRef.current && !isSameTask) {
+        console.log("Stopping previous task before resuming new one"); // Optional debug log
+        handleStopTask();
+      }
 
       prevTaskRef.current = {
         id: newTask._id,
@@ -180,10 +186,10 @@ export default function TaskTimerWidget() {
         description: newTask.description,
         type: taskType || "",
         assignedTo: newTask.assignedTo || "unknown",
-        startTime: new Date(),
+        startTime: startTime ? new Date(startTime) : new Date(),
       };
+      console.log("Resumed task:", prevTaskRef.current.title); // Optional debug log
       startShiftTimer();
-
     };
 
     window.addEventListener("storage", handleStorage);
@@ -241,14 +247,14 @@ export default function TaskTimerWidget() {
 
         <div className="flex gap-2">
           <button
-  onClick={handleStopTask}
-  disabled={!prevTaskRef.current}
-  className={`flex-1 px-4 py-2 rounded text-white ${
-    prevTaskRef.current ? "bg-red-500 hover:bg-red-600" : "bg-gray-300 cursor-not-allowed"
-  }`}
->
-  Stop Task
-</button>
+            onClick={handleStopTask}
+            disabled={!prevTaskRef.current}
+            className={`flex-1 px-4 py-2 rounded text-white ${
+              prevTaskRef.current ? "bg-red-500 hover:bg-red-600" : "bg-gray-300 cursor-not-allowed"
+            }`}
+          >
+            Stop Task
+          </button>
           <button
             onClick={stopShift}
             className="flex-1 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"

@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import TaskTimerWidget from "@/components/TaskTimerWidget";
-
-// app/layout.jsx
-
-import "./globals.css";
-
-
+import TaskTimerWidget from "@/components/TaskTimerWidget";  // Already imported—good!
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,12 +28,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        
-        
         {children}
+        <TaskTimerWidget />  {/* NEW: Added here to render globally on every page */}
       </body>
     </html>
   );
 }
-
-
