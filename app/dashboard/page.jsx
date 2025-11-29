@@ -4,6 +4,22 @@
 import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 
+function getCached(key, maxAgeMs = 5 * 60 * 1000) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > maxAgeMs) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function setCached(key, data) {
+  localStorage.setItem(key, JSON.stringify({ data, ts: Date.now() }));
+}
+
 export default function UserList() {
   const [chiefs, setChiefs] = useState([]);
   const [groupedUsers, setGroupedUsers] = useState({});
@@ -16,94 +32,117 @@ export default function UserList() {
   // Fetch Shift + Task Stats + Users
   // ------------------------------
   useEffect(() => {
-    async function fetchUserStats() {
-      try {
-        const [shiftRes, taskRes, usersRes] = await Promise.all([
-          fetch("/api/shifts"),
-          fetch("/api/user-task-stats"),
-          fetch("/api/users"),
-        ]);
-
-        let userShifts = {};
-        let taskStats = {};
-
-        // --- Shift data ---
-        if (shiftRes.ok) {
-          const json = await shiftRes.json();
-          userShifts = json.shiftHoursPerUser || json || {};
-        } else {
-          console.error("Failed /api/shifts:", await shiftRes.text());
-        }
-
-        // --- Task stats ---
-        if (taskRes.ok) {
-          const json = await taskRes.json();
-          taskStats = json.stats || {};
-        } else {
-          console.error("Failed /api/user-task-stats:", await taskRes.text());
-        }
-
-        // Build shift stats
-        const formattedStats = {};
-        for (const [userId, shiftHoursRaw] of Object.entries(userShifts)) {
-          const email = userId.toLowerCase().trim();
-          const shiftHours = Number(shiftHoursRaw) || 0;
-
-          const usedHours =
-            Number(taskStats[email]?.durationSeconds || 0) / 3600;
-
-          formattedStats[email] = {
-            userId: email,
-            shiftHours,
-            usedHours,
-            remaining: shiftHours - usedHours,
-          };
-        }
-
-        setShiftStats(formattedStats);
-
-        // --- Grouping users ---
-        const usersJson = await usersRes.json();
-        const chiefsList = [];
-        const groups = {};
-
-        usersJson.value.forEach((user) => {
-          if (!user.jobTitle || !user.assignedLicenses?.length) return;
-
-          const email = (user.mail || user.userPrincipalName)
-            ?.toLowerCase()
-            .trim();
-
-          const isChief = user.jobTitle.toLowerCase().includes("chief");
-
-          // Attach their task stats
-          user.taskStats = {
-            completed: taskStats[email]?.completed || 0,
-            pending: taskStats[email]?.pending || 0,
-            totalDuration:
-              (taskStats[email]?.durationSeconds || 0) / 3600,
-          };
-
-          if (isChief) {
-            chiefsList.push(user);
-          } else {
-            if (!groups[user.jobTitle]) groups[user.jobTitle] = [];
-            groups[user.jobTitle].push(user);
-          }
-        });
-
-        setChiefs(chiefsList);
-        setGroupedUsers(groups);
-      } catch (err) {
-        console.error("Unexpected error in fetchUserStats:", err);
-      }
+  async function fetchUserStats() {
+    const cacheKey = "dashboard_users";
+    const cached = getCached(cacheKey);
+    if (cached) {
+      setChiefs(cached.chiefs);
+      setGroupedUsers(cached.groupedUsers);
+      setShiftStats(cached.shiftStats);
+      return;
     }
 
-    fetchUserStats();
-  }, []);
+    try {
+      const [shiftRes, taskRes, usersRes] = await Promise.all([
+        fetch("/api/shifts"),
+        fetch("/api/user-task-stats"),
+        fetch("/api/users"),
+      ]);
+
+      let userShifts = {};
+      let taskStats = {};
+
+      // --- Shift data ---
+      if (shiftRes.ok) {
+        const json = await shiftRes.json();
+        userShifts = json.shiftHoursPerUser || json || {};
+      } else {
+        console.error("Failed /api/shifts:", await shiftRes.text());
+      }
+
+      // --- Task stats ---
+      if (taskRes.ok) {
+        const json = await taskRes.json();
+        taskStats = json.stats || {};
+      } else {
+        console.error("Failed /api/user-task-stats:", await taskRes.text());
+      }
+
+      // Build shift stats
+      const formattedStats = {};
+      for (const [userId, shiftHoursRaw] of Object.entries(userShifts)) {
+        const email = userId.toLowerCase().trim();
+        const shiftHours = Number(shiftHoursRaw) || 0;
+
+        const usedHours =
+          Number(taskStats[email]?.durationSeconds || 0) / 3600;
+
+        formattedStats[email] = {
+          userId: email,
+          shiftHours,
+          usedHours,
+          remaining: shiftHours - usedHours,
+        };
+      }
+
+      // --- Grouping users ---
+      const usersJson = await usersRes.json();
+      const chiefsList = [];
+      const groups = {};
+
+      usersJson.value.forEach((user) => {
+        if (!user.jobTitle || !user.assignedLicenses?.length) return;
+
+        const email = (user.mail || user.userPrincipalName)
+          ?.toLowerCase()
+          .trim();
+
+        const isChief = user.jobTitle.toLowerCase().includes("chief");
+
+        // Attach their task stats
+        user.taskStats = {
+          completed: taskStats[email]?.completed || 0,
+          pending: taskStats[email]?.pending || 0,
+          totalDuration:
+            (taskStats[email]?.durationSeconds || 0) / 3600,
+        };
+
+        if (isChief) {
+          chiefsList.push(user);
+        } else {
+          if (!groups[user.jobTitle]) groups[user.jobTitle] = [];
+          groups[user.jobTitle].push(user);
+        }
+      });
+
+      setChiefs(chiefsList);
+      setGroupedUsers(groups);
+      setShiftStats(formattedStats);
+
+      // Cache the result for 5 minutes
+      setCached(cacheKey, {
+        chiefs: chiefsList,
+        groupedUsers: groups,
+        shiftStats: formattedStats,
+      });
+    } catch (err) {
+      console.error("Unexpected error in fetchUserStats:", err);
+    }
+  }
+
+  fetchUserStats();
+}, []);
 
   useEffect(() => {
   async function fetchHRStats() {
+    const cacheKey = "dashboard_hr_stats";
+    const cached = getCached(cacheKey);
+    if (cached) {
+      setOverallHR(cached.overallHR);
+      setHrStats(cached.hrStats);
+      return;
+    }
+
     try {
       const period = "daily";
       const res = await fetch(`/api/public-hr-stats?period=${period}`);
@@ -121,15 +160,21 @@ export default function UserList() {
       const adherence = 100 - tardiness; // same formula as HR page
       const disciplinary = absent;
 
-      setOverallHR({
+      const overallHRData = {
         attendance,
         tardiness,
         adherence,
         disciplinary,
-      });
+      };
 
-      // Per-user stats (already correct)
+      setOverallHR(overallHRData);
       setHrStats(data.userStats || {});
+
+      // Cache the result for 5 minutes
+      setCached(cacheKey, {
+        overallHR: overallHRData,
+        hrStats: data.userStats || {},
+      });
     } catch (err) {
       console.error("Failed to fetch HR stats:", err);
       setOverallHR(null);
