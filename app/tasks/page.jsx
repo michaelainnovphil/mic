@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
 import Header from "@/components/Header";
+import TaskTimerWidget from "@/components/TaskTimerWidget";
 import { Dialog } from "@headlessui/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"; 
 import { TEAM_MAP } from "@/lib/teamMap";
+
+
 
 function TasksContent() {
   const [tasks, setTasks] = useState([]);
@@ -26,6 +29,7 @@ function TasksContent() {
 
   // New state to track if user has an in-progress task
   const [hasInProgressTask, setHasInProgressTask] = useState(false);
+  const [inProgressTaskId, setInProgressTaskId] = useState(null);
 
   useEffect(() => {
     if (session?.user?.email) fetchTasks();
@@ -47,12 +51,15 @@ function TasksContent() {
 
       // Check if user has an in-progress task assigned
       const inProgressTask = filtered.find(
-        (task) =>
-          task.status === "in-progress" &&
-          Array.isArray(task.assignedTo) &&
-          task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
-      );
-      setHasInProgressTask(!!inProgressTask);
+  (task) =>
+    task.status === "in-progress" &&
+    Array.isArray(task.assignedTo) &&
+    task.assignedTo.some((a) => a?.toLowerCase() === myEmail)
+);
+
+setHasInProgressTask(!!inProgressTask);
+setInProgressTaskId(inProgressTask?._id || null); 
+
 
       // My tasks: assigned to me (case-insensitive)
       let mine = filtered.filter(
@@ -278,9 +285,9 @@ function TasksContent() {
                         {task.description && (
                           <p className="text-sm text-gray-600 dark:text-gray-300">{task.description}</p>
                         )}
-                        {task.assignedTo && task.assignedTo.length > 0 && (
+                        {task.createdBy && (
                           <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Assigned to: <strong>{task.assignedTo.join(", ")}</strong>
+                            Assigned by: <strong>{task.createdBy}</strong>
                           </p>
                         )}
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
@@ -315,14 +322,15 @@ function TasksContent() {
                               }
                             }}
                             className={`px-3 py-1 rounded ${
-                              hasInProgressTask
+                              inProgressTaskId === task._id
                                 ? "bg-gray-400 text-gray-700 cursor-not-allowed"
                                 : "bg-green-500 text-white hover:bg-green-600"
                             }`}
-                            disabled={hasInProgressTask}
+                            disabled={inProgressTaskId === task._id}
                           >
                             Start
                           </button>
+
                         )}
 
                         {task.status === "in-progress" && (
@@ -367,7 +375,7 @@ function TasksContent() {
               )}
             </div>
           </div>
-         
+          <TaskTimerWidget activeTask={activeTask} />
         </div>
       </div>
 

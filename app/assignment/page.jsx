@@ -19,7 +19,7 @@ function AssignmentContent() {
   const [assignedTasks, setAssignedTasks] = useState([]);
   const [teamTasks, setTeamTasks] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
-  const [assignedTo, setAssignedTo] = useState("");
+  const [assignedTo, setAssignedTo] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [userTasks, setUserTasks] = useState({ completed: [], inProgress: [], pending: [] });
@@ -140,33 +140,37 @@ function AssignmentContent() {
   };
 
   const handleAddTask = async () => {
-    if (!title) return alert("Title is required");
+  if (!title) return alert("Title is required");
 
-    const assignedValue = assignedTo.trim() === "" ? "unassigned" : assignedTo;
+  const assignedValue =
+  Array.isArray(assignedTo) && assignedTo.length > 0
+    ? assignedTo
+    : ["unassigned"];
 
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        description,
-        priority,
-        assignedTo: assignedValue,
-        createdBy: currentUserEmail,
-      }),
-    });
+  const res = await fetch("/api/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      title,
+      description,
+      priority,
+      assignedTo: assignedValue,
+      createdBy: currentUserEmail,
+    }),
+  });
 
-    if (res.ok) {
-      setTitle("");
-      setDescription("");
-      setPriority("Medium");
-      setAssignedTo("");
-      await fetchAssignedTasks();
-    } else {
-      const data = await res.json();
-      alert(data.error || "Failed to add task");
-    }
-  };
+  if (res.ok) {
+    setTitle("");
+    setDescription("");
+    setPriority("Medium");
+    setAssignedTo([]);
+    await fetchAssignedTasks();
+  } else {
+    const data = await res.json();
+    alert(data.error || "Failed to add task");
+  }
+};
+
 
   //  Delete Task
   const handleDeleteTask = async (id) => {
@@ -228,17 +232,53 @@ function AssignmentContent() {
             <div>
               <label className="block mb-1 font-medium">Assign to</label>
               <select
-                value={assignedTo}
-                onChange={(e) => setAssignedTo(e.target.value)}
-                className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              >
-                <option value="">Select team member</option>
-                {teamMembers.map((user) => (
-                  <option key={user.id || user._id} value={user.mail || user.email}>
-                    {user.displayName || user.mail || user.email}
-                  </option>
-                ))}
-              </select>
+  multiple
+  value={assignedTo}
+  onChange={(e) =>
+    setAssignedTo(Array.from(e.target.selectedOptions, (opt) => opt.value))
+  }
+  className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white h-40"
+>
+  {teamMembers.map((user) => (
+    <option
+      key={user.id || user._id}
+      value={user.mail || user.userPrincipalName}
+    >
+      {user.displayName || user.mail || user.userPrincipalName}
+    </option>
+  ))}
+</select>
+
+{/* Selected Users Chips */}
+{assignedTo.length > 0 && (
+  <div className="flex flex-wrap gap-2 mt-2">
+    {assignedTo.map((email) => (
+      <div
+        key={email}
+        className="flex items-center bg-blue-100 dark:bg-blue-800 text-blue-900 dark:text-blue-200 px-3 py-1 rounded-full text-sm"
+      >
+        <span>
+          {teamMembers.find(
+  (u) => (u.mail || u.userPrincipalName) === email
+)
+?.displayName ||
+            email}
+        </span>
+
+        <button
+          onClick={() =>
+            setAssignedTo((prev) => prev.filter((u) => u !== email))
+          }
+          className="ml-2 text-xs font-bold hover:text-red-600"
+        >
+          ✕
+        </button>
+      </div>
+    ))}
+  </div>
+)}
+
+
             </div>
           </div>
           <button
@@ -279,8 +319,12 @@ function AssignmentContent() {
                     {task.description && <p className="text-sm">{task.description}</p>}
                     <p className="text-sm text-gray-500">Priority: {task.priority}</p>
                     {task.assignedTo && (
-                      <p className="text-sm">Assigned to: {task.assignedTo}</p>
-                    )}
+  <p className="text-sm">
+    Assigned to: {Array.isArray(task.assignedTo)
+      ? task.assignedTo.join(", ")
+      : task.assignedTo}
+  </p>
+)}
                   </div>
                 ))
               )}

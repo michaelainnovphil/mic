@@ -200,6 +200,7 @@ function OverviewContent() {
         const shiftDate = shift.date || shift.start;
         const shiftBreak = shift.breakMinutes ?? 0;
         let status = shift.type || "Absent";
+        
 
         if (shift.clockIn) {
           const loginTime = new Date(shift.clockIn);
