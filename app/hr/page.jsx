@@ -267,7 +267,7 @@ function OverviewContent() {
       },
       {
         name: "Tardy",
-        value: totalCountForCharts > 0 ? Math.round((tardyCount / totalCountForCharts) * 100) : 0,
+        value: totalCountForCharts > 0 ? Math.round(((totalCountForCharts - tardyCount) / totalCountForCharts) * 100) : 0,
       },
       {
         name: "Absent",

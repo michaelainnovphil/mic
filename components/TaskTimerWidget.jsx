@@ -209,7 +209,7 @@ export default function TaskTimerWidget() {
     <Draggable nodeRef={nodeRef}>
       <div
         ref={nodeRef}
-        className="fixed z-50 bottom-4 right-4 bg-white shadow-xl rounded-2xl p-4 w-80 border border-gray-300"
+        className="fixed z-50 bottom-4 right-4 bg-white dark:bg-gray-900 shadow-xl rounded-2xl p-4 w-80 border border-gray-300 dark:border-gray-700"
       >
         <div className="flex justify-between items-center mb-2">
           <h2 className="font-bold text-lg">Task Timer</h2>
@@ -241,7 +241,7 @@ export default function TaskTimerWidget() {
           </select>
         </label>
 
-        <div className="text-center text-2xl font-mono mb-4">
+        <div className="text-center text-2xl font-mono mb-4 text-gray-900 dark:text-white">
           {formatTime(timeLeft)}
         </div>
 

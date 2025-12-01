@@ -186,39 +186,21 @@ export default function UserList() {
 
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
       <div className="max-w-6xl mx-auto p-6">
-
-        {/* === Global KPI === */}
-        {overallHR && (
-          <div className="mb-8 bg-white rounded-xl shadow p-4">
-            <h3 className="text-lg font-semibold mb-2 text-blue-900">
-              Overall KPI
-            </h3>
-
-            <ul className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              {Object.entries(overallHR).map(([key, value]) => (
-                <li key={key} className="font-medium text-gray-700">
-                  {key.charAt(0).toUpperCase() + key.slice(1)}:
-                  <span className="font-bold"> {value}%</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        
 
         {/* === Chief / Stakeholders === */}
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">
           Our Team
         </h2>
 
         {chiefs.length > 0 && (
           <div className="mb-12">
-            <h3 className="text-xl font-semibold text-blue-900 mb-4">
+            <h3 className="text-xl font-semibold text-blue-900 dark:text-blue-200 mb-4">
               Stakeholders
             </h3>
-
             <div className="flex flex-wrap gap-4">
               {chiefs.map((user) => {
                 const email = (user.mail || user.userPrincipalName)
@@ -229,20 +211,18 @@ export default function UserList() {
                   <div
                     key={user.id}
                     onClick={() => setSelectedUser(user)}
-                    className="bg-white rounded-2xl shadow p-4 w-64 hover:shadow-md transition cursor-pointer"
+                    className="bg-white dark:bg-gray-800 rounded-2xl shadow p-4 w-64 hover:shadow-md transition cursor-pointer"
                   >
                     <img
                       src={user.photo}
                       alt={user.displayName}
                       className="w-12 h-12 rounded-full"
                     />
-
-                    <h4 className="text-lg font-semibold text-gray-900 mt-2">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mt-2">
                       {user.displayName}
                     </h4>
-
-                    <p className="text-gray-600 text-sm">{email}</p>
-                    <p className="text-gray-500 text-xs italic mt-1">
+                    <p className="text-gray-600 dark:text-gray-300 text-sm">{email}</p>
+                    <p className="text-gray-500 dark:text-gray-400 text-xs italic mt-1">
                       {user.jobTitle}
                     </p>
                   </div>
@@ -254,16 +234,15 @@ export default function UserList() {
 
         {/* === Grouped Employees === */}
         {Object.keys(groupedUsers).length === 0 ? (
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600 dark:text-gray-300">Loading...</p>
         ) : (
           Object.entries(groupedUsers)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([groupKey, users]) => (
               <div key={groupKey} className="mb-12">
-                <h3 className="text-xl font-semibold text-blue-900 mb-4">
+                <h3 className="text-xl font-semibold text-blue-900 dark:text-blue-200 mb-4">
                   {groupKey}
                 </h3>
-
                 <div className="space-y-6">
                   {Array.from({
                     length: Math.ceil(users.length / 2),
@@ -285,23 +264,20 @@ export default function UserList() {
                             <div
                               key={user.id}
                               onClick={() => setSelectedUser(user)}
-                              className="bg-white rounded-2xl shadow p-6 hover:shadow-md transition cursor-pointer"
+                              className="bg-white dark:bg-gray-800 rounded-2xl shadow p-6 hover:shadow-md transition cursor-pointer"
                             >
                               <img
                                 src={user.photo}
                                 alt={user.displayName}
                                 className="w-12 h-12 rounded-full"
                               />
-
-                              <h4 className="text-lg font-semibold text-gray-900 mt-2">
+                              <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mt-2">
                                 {user.displayName}
                               </h4>
-
-                              <p className="text-gray-600 text-sm">
+                              <p className="text-gray-600 dark:text-gray-300 text-sm">
                                 {email}
                               </p>
-
-                              <p className="text-gray-500 text-xs italic mt-1">
+                              <p className="text-gray-500 dark:text-gray-400 text-xs italic mt-1">
                                 {user.jobTitle}
                               </p>
                             </div>
@@ -322,32 +298,28 @@ export default function UserList() {
           onClick={() => setSelectedUser(null)}
         >
           <div
-            className="bg-white/95 rounded-2xl shadow-xl p-6 max-w-md w-full relative"
+            className="bg-white/95 dark:bg-gray-900 rounded-2xl shadow-xl p-6 max-w-md w-full relative"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close */}
             <button
               onClick={() => setSelectedUser(null)}
-              className="absolute top-3 right-3 text-gray-500 hover:text-gray-800 text-xl"
+              className="absolute top-3 right-3 text-gray-500 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white text-xl"
             >
               ✕
             </button>
-
             {/* Header */}
             <div className="mb-4">
-              <h3 className="text-xl font-semibold text-gray-900">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
                 {selectedUser.displayName}
               </h3>
-
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
                 {selectedUser.mail || selectedUser.userPrincipalName}
               </p>
-
-              <p className="text-xs text-gray-500 italic">
+              <p className="text-xs text-gray-500 dark:text-gray-400 italic">
                 {selectedUser.jobTitle}
               </p>
             </div>
-
             {/* Shift + Task Stats */}
             {(() => {
               const email = (
@@ -365,12 +337,11 @@ export default function UserList() {
                 };
 
               return (
-                <div className="space-y-2 text-sm text-gray-700">
+                <div className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
                   <p>
                     ⏱ <strong>Shift Hours:</strong>{" "}
                     {shift.shiftHours.toFixed(2)} hrs
                   </p>
-
                   <p>
                     📋 <strong>Task Duration:</strong>{" "}
                     {(
@@ -378,12 +349,10 @@ export default function UserList() {
                     ).toFixed(2)}{" "}
                     hrs
                   </p>
-
-                  <p className="text-green-600 font-medium">
+                  <p className="text-green-600 dark:text-green-400 font-medium">
                     <strong>Remaining:</strong>{" "}
                     {shift.remaining.toFixed(2)} hrs
                   </p>
-
                   <p className="mt-2">
                     ✅ Completed:{" "}
                     {selectedUser.taskStats?.completed ?? 0} | ⏳ Pending:{" "}
