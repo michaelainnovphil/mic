@@ -1,7 +1,6 @@
-// app/hr/page.jsx
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";  // Added useCallback, useMemo
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   PieChart,
   Pie,
@@ -343,61 +342,60 @@ function OverviewContent() {
   const disciplinaryPercent =
     totalUsers > 0 ? Math.round(((totalUsers - usersWithDA) / totalUsers) * 100) : 100;
 
- // build pieData (memoized for better performance and reactivity)
-const buildPieData = useMemo(() => {
-  if (!selectedUser) {
-    // Overall stats (unchanged)
-    return [
-      { name: "Attendance", value: Math.round(dailyStats.attendance || 100) },
-      { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
-      { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
-      { name: "Disciplinary Action", value: disciplinaryPercent },
-    ];
-  } else {
-    // Per-user stats
-    const userDetail = [
-      ...dailyStats.details.present,
-      ...dailyStats.details.tardy,
-      ...dailyStats.details.absent,
-    ].find((u) => u.userId === selectedUser.id);
-
-    if (!userDetail) {
-      // Fallback if user not found
+  // build pieData (memoized for better performance and reactivity)
+  const buildPieData = useMemo(() => {
+    if (!selectedUser) {
+      // Overall stats (unchanged)
       return [
-        { name: "Attendance", value: 0 },
-        { name: "Tardiness", value: 0 },
-        { name: "Adherence", value: 100 },
-        { name: "Disciplinary Action", value: 100 },
+        { name: "Attendance", value: Math.round(dailyStats.attendance || 100) },
+        { name: "Tardiness", value: Math.round(dailyStats.tardiness || 100) },
+        { name: "Adherence", value: Math.round(dailyStats.adherence || 100) },
+        { name: "Disciplinary Action", value: disciplinaryPercent },
+      ];
+    } else {
+      // Per-user stats
+      const userDetail = [
+        ...dailyStats.details.present,
+        ...dailyStats.details.tardy,
+        ...dailyStats.details.absent,
+      ].find((u) => u.userId === selectedUser.id);
+
+      if (!userDetail) {
+        // Fallback if user not found
+        return [
+          { name: "Attendance", value: 0 },
+          { name: "Tardiness", value: 0 },
+          { name: "Adherence", value: 100 },
+          { name: "Disciplinary Action", value: 100 },
+        ];
+      }
+
+      const { totalPresent, totalTardy, totalShifts, shifts } = userDetail;
+
+      // Attendance: 100% if they have at least one present shift, else 0%
+      const attendanceVal = totalPresent > 0 ? 100 : 0;
+
+      // Tardiness: % of shifts that are tardy
+      const tardinessVal = totalShifts > 0 ? Math.round((totalTardy / totalShifts) * 100) : 0;
+
+      // Adherence: 100% if no shifts exceed 75 min break, else 0%
+      const hasExcessBreak = shifts.some((s) => s.breakMinutes > 75);
+      const adherenceVal = hasExcessBreak ? 0 : 100;
+
+      // DA: 100% if no actions, else 0%
+      const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
+      const daVal = hasDA ? 0 : 100;
+
+      return [
+        { name: "Attendance", value: attendanceVal },
+        { name: "Tardiness", value: tardinessVal },
+        { name: "Adherence", value: adherenceVal },
+        { name: "Disciplinary Action", value: daVal },
       ];
     }
+  }, [selectedUser, dailyStats, disciplinaryPercent, disciplinaryRecords]);
 
-    const { totalPresent, totalTardy, totalShifts, shifts } = userDetail;
-
-    // Attendance: 100% if they have at least one present shift, else 0%
-    const attendanceVal = totalPresent > 0 ? 100 : 0;
-
-    // Tardiness: % of shifts that are tardy
-    const tardinessVal = totalShifts > 0 ? Math.round((totalTardy / totalShifts) * 100) : 0;
-
-    // Adherence: 100% if no shifts exceed 75 min break, else 0%
-    const hasExcessBreak = shifts.some((s) => s.breakMinutes > 75);
-    const adherenceVal = hasExcessBreak ? 0 : 100;
-
-    // DA: 100% if no actions, else 0%
-    const hasDA = disciplinaryRecords[selectedUser.id]?.length > 0;
-    const daVal = hasDA ? 0 : 100;
-
-    return [
-      { name: "Attendance", value: attendanceVal },
-      { name: "Tardiness", value: tardinessVal },
-      { name: "Adherence", value: adherenceVal },
-      { name: "Disciplinary Action", value: daVal },
-    ];
-  }
-}, [selectedUser, dailyStats, disciplinaryPercent, disciplinaryRecords]);
-
-const pieData = buildPieData;
-
+  const pieData = buildPieData;
 
   const handleAddDA = useCallback(async () => {
     if (!selectedUser || !newDA.trim()) return;
@@ -464,9 +462,7 @@ const pieData = buildPieData;
   }, [refreshDA]);
 
   const presentList = [...dailyStats.details.present, ...dailyStats.details.tardy];
-
   const absentList = dailyStats.details.absent || [];
-
   const leaveRestList = [
     ...dailyStats.details.restDay,
     ...dailyStats.details.leave,
@@ -475,14 +471,14 @@ const pieData = buildPieData;
   if (status === "loading") return <p>Loading...</p>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
 
       <div className="max-w-[90%] mx-auto p-6 space-y-10">
         {/* Daily Averages Pie */}
-        <div className="bg-white shadow rounded-2xl p-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-2xl p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-lg font-semibold">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               {selectedUser
                 ? `${selectedUser.name}'s Stats`
                 : "Daily Average For Naga/Makati"}
@@ -491,7 +487,7 @@ const pieData = buildPieData;
             {selectedUser && (
               <button
                 onClick={() => setSelectedUser(null)}
-                className="ml-4 rounded-md bg-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-300"
+                className="ml-4 rounded-md bg-gray-200 dark:bg-gray-700 px-3 py-1 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
               >
                 Reset
               </button>
@@ -505,7 +501,9 @@ const pieData = buildPieData;
                 key={p}
                 onClick={() => setPeriod(p)}
                 className={`px-3 py-1 rounded ${
-                  period === p ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-700"
+                  period === p
+                    ? "bg-blue-900 text-white"
+                    : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
                 }`}
               >
                 {p.charAt(0).toUpperCase() + p.slice(1)}
@@ -543,11 +541,11 @@ const pieData = buildPieData;
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
-                  <span className="absolute inset-0 flex items-center justify-center text-base font-bold text-gray-700">
+                  <span className="absolute inset-0 flex items-center justify-center text-base font-bold text-gray-700 dark:text-gray-100">
                     {item.value}%
                   </span>
                 </div>
-                <span className="mt-3 text-sm font-medium text-gray-700">
+                <span className="mt-3 text-sm font-medium text-gray-700 dark:text-gray-100">
                   {item.name}
                 </span>
               </div>
@@ -555,19 +553,18 @@ const pieData = buildPieData;
           </div>
         </div>
 
-
         {/* Department Dropdowns */}
-        <div className="bg-white shadow rounded-2xl p-6">
-          <h2 className="text-lg font-semibold mb-4">Departments</h2>
+        <div className="bg-white dark:bg-gray-800 shadow rounded-2xl p-6">
+          <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Departments</h2>
           <div className="space-y-4">
             {Object.entries(groupedByDept).map(([dept, members]) => (
               <Disclosure key={dept}>
                 {({ open }) => (
-                  <div className="border border-[#0a1f8f] rounded-lg">
-                    <Disclosure.Button className="flex justify-between w-full px-4 py-2 text-left text-sm font-medium bg-gray-100 rounded-lg hover:bg-gray-200">
-                      <span>{dept}</span>
+                  <div className="border border-[#0a1f8f] dark:border-blue-900 rounded-lg">
+                    <Disclosure.Button className="flex justify-between w-full px-4 py-2 text-left text-sm font-medium bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                      <span className="text-gray-900 dark:text-gray-100">{dept}</span>
                       <ChevronUpIcon
-                        className={`${open ? "rotate-180 transform" : ""} w-5 h-5 text-gray-500`}
+                        className={`${open ? "rotate-180 transform" : ""} w-5 h-5 text-gray-500 dark:text-gray-300`}
                       />
                     </Disclosure.Button>
                     <Disclosure.Panel className="px-4 pb-4">
@@ -575,22 +572,21 @@ const pieData = buildPieData;
                         {members.map((u) => (
                           <li
                             key={u.id}
-                            className="flex justify-between items-center text-sm p-2 rounded bg-gray-50 cursor-pointer hover:bg-gray-100"
+                            className="flex justify-between items-center text-sm p-2 rounded bg-gray-50 dark:bg-gray-900 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
                             onClick={() => setSelectedUser(u)}
                           >
                             <div>
-                              <span className="font-medium">{u.name}</span>
-                              <span className="ml-2 text-gray-500 text-xs">
+                              <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
+                              <span className="ml-2 text-gray-500 dark:text-gray-300 text-xs">
                                 {Math.round(u.percentage)}% tasks
                               </span>
                               {disciplinaryRecords[u.id] && (
-                              <ul className="ml-4 list-disc text-gray-600">
-                                {disciplinaryRecords[u.id].map((d) => (
-                                  <li key={d._id}>{d.action}</li>
-                                ))}
-                              </ul>
-                            )}
-
+                                <ul className="ml-4 list-disc text-gray-600 dark:text-gray-300">
+                                  {disciplinaryRecords[u.id].map((d) => (
+                                    <li key={d._id}>{d.action}</li>
+                                  ))}
+                                </ul>
+                              )}
                             </div>
                             <button
                               onClick={(e) => {
@@ -613,404 +609,369 @@ const pieData = buildPieData;
           </div>
         </div>
 
-        
+        {/* Attendance Modal */}
+        <Dialog
+          open={showAttendanceModal}
+          onClose={() => setShowAttendanceModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-2xl rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl w-full">
+  <Dialog.Title className="text-lg font-semibold text-gray-800 dark:text-white">
+    {selectedUser ? `${selectedUser.name}'s Attendance` : "Attendance Breakdown"}
+  </Dialog.Title>
+  <div className="mt-4 space-y-6 max-h-80 overflow-y-auto pr-2">
+    {(() => {
+      const today = new Date().toISOString().split('T')[0];
+      const isDaily = period === "daily";
+      const usersToShow = selectedUser
+        ? [presentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+        : presentList;
+      return (
+        <>
+          {/* PRESENT (includes TARDY) */}
+          {usersToShow.length > 0 && (
+            <div>
+              <h4 className="font-medium text-green-600 dark:text-green-400 mb-2">
+                Present ({usersToShow.length})
+              </h4>
+              <ul className="space-y-2">
+                {usersToShow.map((u) => {
+                  const filteredShifts = isDaily
+                    ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                    : u.shifts;
+                  return (
+                    <li
+                      key={u.userId}
+                      className="p-3 rounded-lg bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 text-sm"
+                    >
+                      <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                      <ul className="ml-4 mt-1 text-gray-700 dark:text-gray-200 list-disc">
+                        {filteredShifts.map((s, idx) => (
+                          <li key={idx}>
+                            {new Date(s.date).toLocaleDateString()} — {s.type}
+                            {s.clockIn && (
+                              <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                            )}
+                            {s.clockOut && (
+                              <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                            )}
+                            {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
+          {/* ABSENT */}
+          {(() => {
+            const absentUsersToShow = selectedUser
+              ? [absentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+              : absentList;
+            return absentUsersToShow.length > 0 && (
+              <div>
+                <h4 className="font-medium text-red-600 dark:text-red-400 mb-2">
+                  Absent ({absentUsersToShow.length})
+                </h4>
+                <ul className="space-y-2">
+                  {absentUsersToShow.map((u) => {
+                    const filteredShifts = isDaily
+                      ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                      : u.shifts;
+                    return (
+                      <li
+                        key={u.userId}
+                        className="p-3 rounded-lg bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-sm"
+                      >
+                        <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                        <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
+                          {filteredShifts.map((s, idx) => (
+                            <li key={idx}>
+                              {new Date(s.date).toLocaleDateString()} — Absent
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })()}
 
-           {/* Attendance Modal */}
-<Dialog
-  open={showAttendanceModal}
-  onClose={() => setShowAttendanceModal(false)}
-  className="relative z-50"
->
-  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-  <div className="fixed inset-0 flex items-center justify-center p-4">
-    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-      <Dialog.Title className="text-lg font-semibold text-gray-800">
-        {selectedUser ? `${selectedUser.name}'s Attendance` : "Attendance Breakdown"}
-      </Dialog.Title>
+          {/* LEAVE + REST DAY */}
+          {(() => {
+            const leaveUsersToShow = selectedUser
+              ? [leaveRestList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+              : leaveRestList;
+            return leaveUsersToShow.length > 0 && (
+              <div>
+                <h4 className="font-medium text-blue-600 dark:text-blue-400 mb-2">
+                  Leave / Rest Day ({leaveUsersToShow.length})
+                </h4>
+                <ul className="space-y-2">
+                  {leaveUsersToShow.map((u) => {
+                    const filteredShifts = isDaily
+                      ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                      : u.shifts;
+                    return (
+                      <li
+                        key={u.userId}
+                        className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-sm"
+                      >
+                        <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                        <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
+                          {filteredShifts.map((s, idx) => (
+                            <li key={idx}>
+                              {new Date(s.date).toLocaleDateString()} — {s.type}
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })()}
+        </>
+      );
+    })()}
+  </div>
+</Dialog.Panel>
+          </div>
+        </Dialog>
 
-      <div className="mt-4 space-y-6 max-h-80 overflow-y-auto">
-        {(() => {
-          const today = new Date().toISOString().split('T')[0];
-          const isDaily = period === "daily";
+        {/* Tardiness Modal */}
+        <Dialog
+          open={showTardinessModal}
+          onClose={() => setShowTardinessModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl w-full">
+  <Dialog.Title className="text-lg font-semibold text-gray-800 dark:text-white">
+    {selectedUser ? `${selectedUser.name}'s Tardiness` : "Tardiness"}
+  </Dialog.Title>
+  {(() => {
+    const tardyUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
+      (u) => u.shifts.some((s) => s.status === "Tardy")
+    );
+    const usersToShow = selectedUser
+      ? tardyUsers.filter((u) => u.userId === selectedUser.id)
+      : tardyUsers;
+    return usersToShow.length > 0 ? (
+      <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto pr-2">
+        {usersToShow.map((u) => (
+          <li
+            key={u.userId}
+            className="flex flex-col text-sm p-3 rounded bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700"
+          >
+            <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
+            <ul className="ml-4 list-disc text-yellow-700 dark:text-yellow-200">
+              {u.shifts
+                .filter((s) => s.status === "Tardy")
+                .map((s, idx) => (
+                  <li key={idx}>
+                    {s.date
+                      ? new Date(s.date).toLocaleDateString()
+                      : "N/A"}{" "}
+                    - {s.status}{" "}
+                    {s.clockIn &&
+                      `(Login: ${new Date(s.clockIn).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })})`}
+                  </li>
+                ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="mt-2 text-sm text-gray-500 dark:text-gray-300">No tardy employees</p>
+    );
+  })()}
+  <div className="mt-4 flex justify-end">
+    <button
+      onClick={() => setShowTardinessModal(false)}
+      className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+    >
+      Close
+    </button>
+  </div>
+</Dialog.Panel>
+          </div>
+        </Dialog>
 
-          // Filter users: if selectedUser, only that user; else all
-          const usersToShow = selectedUser
-            ? [presentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
-            : presentList;
-
-          return (
-            <>
-              {/* PRESENT (includes TARDY) */}
-              {usersToShow.length > 0 && (
-                <div>
-                  <h4 className="font-medium text-green-600 mb-2">
-                    Present ({usersToShow.length})
-                  </h4>
-                  <ul className="space-y-2">
-                    {usersToShow.map((u) => {
-                      const filteredShifts = isDaily
-                        ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                        : u.shifts;
-
-                      return (
-                        <li
-                          key={u.userId}
-                          className="p-3 rounded-lg bg-green-50 border border-green-200 text-sm"
-                        >
-                          <p className="font-medium text-gray-800">{u.name}</p>
-                          <ul className="ml-4 mt-1 text-gray-700 list-disc">
-                            {filteredShifts.map((s, idx) => (
+        {/* Adherence Modal */}
+        <Dialog
+          open={showAdherenceModal}
+          onClose={() => setShowAdherenceModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl w-full">
+              <Dialog.Title className="text-lg font-semibold text-gray-800 dark:text-white">
+                {selectedUser ? `${selectedUser.name}'s Adherence` : "Adherence"}
+              </Dialog.Title>
+              {(() => {
+                const adherenceUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
+                  (u) => u.shifts.some((s) => s.breakMinutes > 75)
+                );
+                const usersToShow = selectedUser
+                  ? adherenceUsers.filter((u) => u.userId === selectedUser.id)
+                  : adherenceUsers;
+                return usersToShow.length > 0 ? (
+                  <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
+                    {usersToShow.map((u) => (
+                      <li
+                        key={u.userId}
+                        className="flex flex-col text-sm p-3 rounded bg-red-50 border border-red-200"
+                      >
+                        <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
+                        <ul className="ml-4 list-disc text-red-700 dark:text-red-300">
+                          {u.shifts
+                            .filter((s) => s.breakMinutes > 75)
+                            .map((s, idx) => (
                               <li key={idx}>
-                                {new Date(s.date).toLocaleDateString()} — {s.type}
-                                {s.clockIn && (
-                                  <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                                )}
-                                {s.clockOut && (
-                                  <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                                )}
-                                {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
+                                {s.date
+                                  ? new Date(s.date).toLocaleDateString()
+                                  : "N/A"}{" "}
+                                - Break: {s.breakMinutes} min
+                              </li>
+                            ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-300">
+                    No employees exceeded the break limit
+                  </p>
+                );
+              })()}
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowAdherenceModal(false)}
+                  className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
+                >
+                  Close
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+
+        {/* Disciplinary Modal */}
+        <Dialog
+          open={showDAModal}
+          onClose={() => setShowDAModal(false)}
+          className="relative z-50"
+        >
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" aria-hidden="true" />
+          <div className="fixed inset-0 flex items-center justify-center p-4">
+            <Dialog.Panel className="mx-auto max-w-lg w-full rounded-2xl bg-white dark:bg-gray-900 shadow-xl">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+                <Dialog.Title className="text-lg font-semibold text-gray-800 dark:text-white">
+                  Disciplinary Action
+                </Dialog.Title>
+                <button
+                  onClick={() => setShowDAModal(false)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-6 max-h-96 overflow-y-auto">
+                {selectedUser ? (
+                  <>
+                    <p className="text-sm text-gray-500 dark:text-gray-300 mb-4">
+                      Actions for <span className="font-medium text-gray-800 dark:text-gray-100">{selectedUser.name}</span>
+                    </p>
+                    {disciplinaryRecords[selectedUser.id]?.length > 0 ? (
+                      <ul className="space-y-2">
+                        {disciplinaryRecords[selectedUser.id].map((d) => (
+                          <li
+                            key={d._id}
+                            className="flex justify-between items-center rounded-xl bg-gray-50 dark:bg-gray-800 px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                          >
+                            <span>{d.action}</span>
+                            <button
+                              onClick={() => handleDeleteDA(d._id)}
+                              className="text-red-500 hover:text-red-600 text-xs font-medium"
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">No records yet</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-4">
+                    {Object.entries(disciplinaryRecords).length > 0 ? (
+                      Object.entries(disciplinaryRecords).map(([userId, actions]) => (
+                        <div
+                          key={userId}
+                          className="rounded-xl bg-gray-50 dark:bg-gray-800 p-4 shadow-sm"
+                        >
+                          <p className="font-medium text-gray-800 dark:text-gray-100 mb-2">
+                            {users.find((u) => u.id === userId)?.name || userId}
+                          </p>
+                          <ul className="space-y-1 text-sm text-gray-600 dark:text-gray-200">
+                            {actions.map((d) => (
+                              <li
+                                key={d._id}
+                                className="flex justify-between items-center bg-white dark:bg-gray-900 rounded-lg px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                              >
+                                <span>{d.action}</span>
+                                <button
+                                  onClick={() => handleDeleteDA(d._id)}
+                                  className="text-red-500 hover:text-red-600 text-xs font-medium"
+                                >
+                                  Remove
+                                </button>
                               </li>
                             ))}
                           </ul>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">No disciplinary actions recorded</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              {selectedUser && (
+                <div className="border-t border-gray-100 dark:border-gray-700 px-6 py-4 bg-gray-50 dark:bg-gray-800 flex gap-2">
+                  <input
+                    type="text"
+                    value={newDA}
+                    onChange={(e) => setNewDA(e.target.value)}
+                    placeholder="Enter new action"
+                    className="flex-1 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                  />
+                  <button
+                    onClick={handleAddDA}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 transition"
+                  >
+                    Add
+                  </button>
                 </div>
               )}
-
-              {/* ABSENT */}
-              {(() => {
-                const absentUsersToShow = selectedUser
-                  ? [absentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
-                  : absentList;
-
-                return absentUsersToShow.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-red-600 mb-2">
-                      Absent ({absentUsersToShow.length})
-                    </h4>
-                    <ul className="space-y-2">
-                      {absentUsersToShow.map((u) => {
-                        const filteredShifts = isDaily
-                          ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                          : u.shifts;
-
-                        return (
-                          <li
-                            key={u.userId}
-                            className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm"
-                          >
-                            <p className="font-medium text-gray-800">{u.name}</p>
-                            <ul className="ml-4 mt-1 list-disc text-gray-700">
-                              {filteredShifts.map((s, idx) => (
-                                <li key={idx}>
-                                  {new Date(s.date).toLocaleDateString()} — Absent
-                                </li>
-                              ))}
-                            </ul>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                );
-              })()}
-
-              {/* LEAVE + REST DAY */}
-              {(() => {
-                const leaveUsersToShow = selectedUser
-                  ? [leaveRestList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
-                  : leaveRestList;
-
-                return leaveUsersToShow.length > 0 && (
-                  <div>
-                    <h4 className="font-medium text-blue-600 mb-2">
-                      Leave / Rest Day ({leaveUsersToShow.length})
-                    </h4>
-                    <ul className="space-y-2">
-                      {leaveUsersToShow.map((u) => {
-                        const filteredShifts = isDaily
-                          ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                          : u.shifts;
-
-                        return (
-                          <li
-                            key={u.userId}
-                            className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-sm"
-                          >
-                            <p className="font-medium text-gray-800">{u.name}</p>
-                            <ul className="ml-4 mt-1 list-disc text-gray-700">
-                              {filteredShifts.map((s, idx) => (
-                                <li key={idx}>
-                                  {new Date(s.date).toLocaleDateString()} — {s.type}
-                                </li>
-                              ))}
-                            </ul>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                );
-              })()}
-            </>
-          );
-        })()}
-      </div>
-    </Dialog.Panel>
-  </div>
-</Dialog>
-
-
-       {/* Tardiness Modal */}
-<Dialog
-  open={showTardinessModal}
-  onClose={() => setShowTardinessModal(false)}
-  className="relative z-50"
->
-  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-  <div className="fixed inset-0 flex items-center justify-center p-4">
-    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-      <Dialog.Title className="text-lg font-semibold">
-        {selectedUser ? `${selectedUser.name}'s Tardiness` : "Tardiness"}
-      </Dialog.Title>
-
-      {(() => {
-        const tardyUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
-          (u) => u.shifts.some((s) => s.status === "Tardy")
-        );
-
-        // Filter to selected user if set
-        const usersToShow = selectedUser
-          ? tardyUsers.filter((u) => u.userId === selectedUser.id)
-          : tardyUsers;
-
-        return usersToShow.length > 0 ? (
-          <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-            {usersToShow.map((u) => (
-              <li
-                key={u.userId}
-                className="flex flex-col text-sm p-3 rounded bg-yellow-50 border border-yellow-200"
-              >
-                <span className="font-medium">{u.name}</span>
-                <ul className="ml-4 list-disc text-yellow-700">
-                  {u.shifts
-                    .filter((s) => s.status === "Tardy")
-                    .map((s, idx) => (
-                      <li key={idx}>
-                        {s.date
-                          ? new Date(s.date).toLocaleDateString()
-                          : "N/A"}{" "}
-                        - {s.status}{" "}
-                        {s.clockIn &&
-                          `(Login: ${new Date(s.clockIn).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })})`}
-                      </li>
-                    ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-gray-500">No tardy employees</p>
-        );
-      })()}
-
-      <div className="mt-4 flex justify-end">
-        <button
-          onClick={() => setShowTardinessModal(false)}
-          className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-        >
-          Close
-        </button>
-      </div>
-    </Dialog.Panel>
-  </div>
-</Dialog>
-
-
-         {/* Adherence Modal */}
-<Dialog
-  open={showAdherenceModal}
-  onClose={() => setShowAdherenceModal(false)}
-  className="relative z-50"
->
-  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-  <div className="fixed inset-0 flex items-center justify-center p-4">
-    <Dialog.Panel className="mx-auto max-w-md rounded-2xl bg-white p-6 shadow-xl w-full">
-      <Dialog.Title className="text-lg font-semibold">
-        {selectedUser ? `${selectedUser.name}'s Adherence` : "Adherence"}
-      </Dialog.Title>
-
-      {(() => {
-        const adherenceUsers = [...dailyStats.details.present, ...dailyStats.details.tardy].filter(
-          (u) => u.shifts.some((s) => s.breakMinutes > 75)
-        );
-
-        // Filter to selected user if set
-        const usersToShow = selectedUser
-          ? adherenceUsers.filter((u) => u.userId === selectedUser.id)
-          : adherenceUsers;
-
-        return usersToShow.length > 0 ? (
-          <ul className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-            {usersToShow.map((u) => (
-              <li
-                key={u.userId}
-                className="flex flex-col text-sm p-3 rounded bg-red-50 border border-red-200"
-              >
-                <span className="font-medium">{u.name}</span>
-                <ul className="ml-4 list-disc text-red-700">
-                  {u.shifts
-                    .filter((s) => s.breakMinutes > 75)
-                    .map((s, idx) => (
-                      <li key={idx}>
-                        {s.date
-                          ? new Date(s.date).toLocaleDateString()
-                          : "N/A"}{" "}
-                        - Break: {s.breakMinutes} min
-                      </li>
-                    ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-gray-500">
-            No employees exceeded the break limit
-          </p>
-        );
-      })()}
-
-      <div className="mt-4 flex justify-end">
-        <button
-          onClick={() => setShowAdherenceModal(false)}
-          className="rounded-md bg-blue-900 px-4 py-2 text-white hover:bg-blue-800"
-        >
-          Close
-        </button>
-      </div>
-    </Dialog.Panel>
-  </div>
-</Dialog>
-
-
-        {/* Disciplinary Modal */}
-<Dialog
-  open={showDAModal}
-  onClose={() => setShowDAModal(false)}
-  className="relative z-50"
->
-  {/* Overlay */}
-  <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" aria-hidden="true" />
-
-  {/* Modal Panel */}
-  <div className="fixed inset-0 flex items-center justify-center p-4">
-    <Dialog.Panel className="mx-auto max-w-lg w-full rounded-2xl bg-white shadow-xl">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-        <Dialog.Title className="text-lg font-semibold text-gray-800">
-          Disciplinary Action
-        </Dialog.Title>
-        <button
-          onClick={() => setShowDAModal(false)}
-          className="text-gray-400 hover:text-gray-600 transition"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Body */}
-      <div className="p-6 max-h-96 overflow-y-auto">
-        {selectedUser ? (
-          <>
-            <p className="text-sm text-gray-500 mb-4">
-              Actions for <span className="font-medium text-gray-800">{selectedUser.name}</span>
-            </p>
-
-            {disciplinaryRecords[selectedUser.id]?.length > 0 ? (
-              <ul className="space-y-2">
-                {disciplinaryRecords[selectedUser.id].map((d) => (
-                  <li
-                    key={d._id}
-                    className="flex justify-between items-center rounded-xl bg-gray-50 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition"
-                  >
-                    <span>{d.action}</span>
-                    <button
-                      onClick={() => handleDeleteDA(d._id)}
-                      className="text-red-500 hover:text-red-600 text-xs font-medium"
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-gray-400 italic">No records yet</p>
-            )}
-          </>
-        ) : (
-          /* All employees with DA */
-          <div className="space-y-4">
-            {Object.entries(disciplinaryRecords).length > 0 ? (
-              Object.entries(disciplinaryRecords).map(([userId, actions]) => (
-                <div
-                  key={userId}
-                  className="rounded-xl bg-gray-50 p-4 shadow-sm"
-                >
-                  <p className="font-medium text-gray-800 mb-2">
-                    {users.find((u) => u.id === userId)?.name || userId}
-                  </p>
-                  <ul className="space-y-1 text-sm text-gray-600">
-                    {actions.map((d) => (
-                      <li
-                        key={d._id}
-                        className="flex justify-between items-center bg-white rounded-lg px-3 py-2 hover:bg-gray-50 transition"
-                      >
-                        <span>{d.action}</span>
-                        <button
-                          onClick={() => handleDeleteDA(d._id)}
-                          className="text-red-500 hover:text-red-600 text-xs font-medium"
-                        >
-                          Remove
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-gray-400 italic">No disciplinary actions recorded</p>
-            )}
+            </Dialog.Panel>
           </div>
-        )}
-      </div>
-
-      {/* Footer (Add New DA) */}
-      {selectedUser && (
-        <div className="border-t border-gray-100 px-6 py-4 bg-gray-50 flex gap-2">
-          <input
-            type="text"
-            value={newDA}
-            onChange={(e) => setNewDA(e.target.value)}
-            placeholder="Enter new action"
-            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
-          <button
-            onClick={handleAddDA}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white text-sm font-medium hover:bg-blue-700 transition"
-          >
-            Add
-          </button>
-        </div>
-      )}
-    </Dialog.Panel>
-  </div>
-</Dialog>
+        </Dialog>
       </div>
     </div>
   );

@@ -28,7 +28,7 @@ export default function OverviewPage() {
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showTardinessModal, setShowTardinessModal] = useState(false);
   const [showOnTimeModal, setShowOnTimeModal] = useState(false);
-  const [onTimeCompletion, setOnTimeCompletion] = useState(0); 
+  const [onTimeCompletion, setOnTimeCompletion] = useState(0);
 
   // fetch users and tasks (monthly stats)
   useEffect(() => {
@@ -182,28 +182,27 @@ export default function OverviewPage() {
     { name: "Tardiness", value: Math.round(dailyStats.tardiness) },
     { name: "Adherence", value: 92 },
     { name: "Disciplinary Action", value: 88 },
-    { name: "On-Time Completion", value: onTimeCompletion }, 
+    { name: "On-Time Completion", value: onTimeCompletion },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
 
       <div className="max-w-[90%] mx-auto p-6 space-y-10">
-
         {/* Monthly Average */}
-        <div className="bg-white shadow rounded-2xl p-6">
-          <h2 className="text-lg font-semibold mb-6">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-2xl p-6">
+          <h2 className="text-lg font-semibold mb-6 text-gray-900 dark:text-gray-100">
             Monthly Average For Naga/Makati
           </h2>
 
           {loading ? (
-            <p>Loading users...</p>
+            <p className="text-gray-700 dark:text-gray-200">Loading users...</p>
           ) : (
             <div className="grid md:grid-cols-2 gap-10">
               {/* Top Performers */}
               <div>
-                <h3 className="text-md font-semibold mb-4 text-center">
+                <h3 className="text-md font-semibold mb-4 text-center text-gray-900 dark:text-gray-100">
                   Top Employees
                 </h3>
                 <div className="flex justify-center gap-8 mb-8">
@@ -231,7 +230,7 @@ export default function OverviewPage() {
                           </div>
                         )}
                       </div>
-                      <span className="mt-2 font-medium">
+                      <span className="mt-2 font-medium text-gray-900 dark:text-gray-100">
                         #{index + 1} {person.name}
                       </span>
                     </div>
@@ -243,7 +242,7 @@ export default function OverviewPage() {
                   {others.map((person, idx) => (
                     <div
                       key={person.id || idx}
-                      className="flex flex-col items-center text-gray-500"
+                      className="flex flex-col items-center text-gray-500 dark:text-gray-300"
                     >
                       {person.photo ? (
                         <Image
@@ -268,7 +267,7 @@ export default function OverviewPage() {
 
               {/* Bar Chart */}
               <div>
-                <h3 className="text-md font-semibold mb-4 text-center">
+                <h3 className="text-md font-semibold mb-4 text-center text-gray-900 dark:text-gray-100">
                   Tasks per Employee
                 </h3>
                 <div className="w-full h-150 overflow-y-auto">
@@ -280,13 +279,26 @@ export default function OverviewPage() {
                     >
                       <XAxis type="number" domain={[0, 100]} />
                       <YAxis
-                        dataKey="name"
-                        type="category"
-                        width={120}
-                        tick={{ fontSize: 12 }}
-                        interval={0}
+  dataKey="name"
+  type="category"
+  width={120}
+  tick={
+    typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? { fontSize: 12, fill: "#F3F4F6" } // light gray for dark mode
+      : { fontSize: 12, fill: "#374151" } // dark gray for light mode
+  }
+  interval={0}
+/>
+                      <Tooltip
+                        contentStyle={{
+                          background: "#1F2937",
+                          color: "#F3F4F6",
+                          borderRadius: "8px",
+                          border: "none",
+                        }}
+                        labelStyle={{ color: "#F3F4F6" }}
+                        wrapperStyle={{ zIndex: 50 }}
                       />
-                      <Tooltip />
                       <Bar
                         dataKey="percentage"
                         fill="#1E3A8A"
