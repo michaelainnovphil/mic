@@ -232,51 +232,51 @@ function AssignmentContent() {
             <div>
               <label className="block mb-1 font-medium">Assign to</label>
               <select
-  multiple
-  value={assignedTo}
-  onChange={(e) =>
-    setAssignedTo(Array.from(e.target.selectedOptions, (opt) => opt.value))
-  }
-  className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white h-40"
->
-  {teamMembers.map((user) => (
-    <option
-      key={user.id || user._id}
-      value={user.mail || user.userPrincipalName}
-    >
-      {user.displayName || user.mail || user.userPrincipalName}
-    </option>
-  ))}
-</select>
+                multiple
+                value={assignedTo}
+                onChange={(e) =>
+                  setAssignedTo(Array.from(e.target.selectedOptions, (opt) => opt.value))
+                }
+                className="w-full p-3 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white h-40"
+              >
+                {teamMembers.map((user) => (
+                  <option
+                    key={user.id || user._id}
+                    value={user.mail || user.userPrincipalName}
+                  >
+                    {user.displayName || user.mail || user.userPrincipalName}
+                  </option>
+                ))}
+              </select>
 
-{/* Selected Users Chips */}
-{assignedTo.length > 0 && (
-  <div className="flex flex-wrap gap-2 mt-2">
-    {assignedTo.map((email) => (
-      <div
-        key={email}
-        className="flex items-center bg-blue-100 dark:bg-blue-800 text-blue-900 dark:text-blue-200 px-3 py-1 rounded-full text-sm"
-      >
-        <span>
-          {teamMembers.find(
-  (u) => (u.mail || u.userPrincipalName) === email
-)
-?.displayName ||
-            email}
-        </span>
+              {/* Selected Users Chips */}
+              {assignedTo.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {assignedTo.map((email) => (
+                    <div
+                      key={email}
+                      className="flex items-center bg-blue-100 dark:bg-blue-800 text-blue-900 dark:text-blue-200 px-3 py-1 rounded-full text-sm"
+                    >
+                      <span>
+                        {teamMembers.find(
+                (u) => (u.mail || u.userPrincipalName) === email
+              )
+              ?.displayName ||
+                          email}
+                      </span>
 
-        <button
-          onClick={() =>
-            setAssignedTo((prev) => prev.filter((u) => u !== email))
-          }
-          className="ml-2 text-xs font-bold hover:text-red-600"
-        >
-          ✕
-        </button>
-      </div>
-    ))}
-  </div>
-)}
+                      <button
+                        onClick={() =>
+                          setAssignedTo((prev) => prev.filter((u) => u !== email))
+                        }
+                        className="ml-2 text-xs font-bold hover:text-red-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
 
             </div>
@@ -319,12 +319,12 @@ function AssignmentContent() {
                     {task.description && <p className="text-sm">{task.description}</p>}
                     <p className="text-sm text-gray-500">Priority: {task.priority}</p>
                     {task.assignedTo && (
-  <p className="text-sm">
-    Assigned to: {Array.isArray(task.assignedTo)
-      ? task.assignedTo.join(", ")
-      : task.assignedTo}
-  </p>
-)}
+                      <p className="text-sm">
+                        Assigned to: {Array.isArray(task.assignedTo)
+                          ? task.assignedTo.join(", ")
+                          : task.assignedTo}
+                      </p>
+                    )}
                   </div>
                 ))
               )}

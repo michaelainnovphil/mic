@@ -299,10 +299,7 @@ setInProgressTaskId(inProgressTask?._id || null);
                         {task.status === "pending" && (
                           <button
                             onClick={async () => {
-                              if (hasInProgressTask) {
-                                alert("You already have an in-progress task. Please complete it before starting a new one.");
-                                return;
-                              }
+                              
                               try {
                                 const res = await fetch(`/api/tasks/${task._id}/status`, {
                                   method: "PUT",
