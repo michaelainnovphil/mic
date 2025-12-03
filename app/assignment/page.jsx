@@ -143,32 +143,36 @@ function AssignmentContent() {
   if (!title) return alert("Title is required");
 
   const assignedValue =
-  Array.isArray(assignedTo) && assignedTo.length > 0
-    ? assignedTo
-    : ["unassigned"];
+    Array.isArray(assignedTo) && assignedTo.length > 0
+      ? assignedTo
+      : ["unassigned"];
 
-  const res = await fetch("/api/tasks", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      title,
-      description,
-      priority,
-      assignedTo: assignedValue,
-      createdBy: currentUserEmail,
-    }),
-  });
+  // Create a separate task for each user
+  for (const user of assignedValue) {
+    const res = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        description,
+        priority,
+        assignedTo: [user], // assign to one user only
+        createdBy: currentUserEmail,
+      }),
+    });
 
-  if (res.ok) {
-    setTitle("");
-    setDescription("");
-    setPriority("Medium");
-    setAssignedTo([]);
-    await fetchAssignedTasks();
-  } else {
-    const data = await res.json();
-    alert(data.error || "Failed to add task");
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || `Failed to add task for ${user}`);
+      return;
+    }
   }
+
+  setTitle("");
+  setDescription("");
+  setPriority("Medium");
+  setAssignedTo([]);
+  await fetchAssignedTasks();
 };
 
 
