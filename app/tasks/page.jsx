@@ -7,10 +7,25 @@ import TaskTimerWidget from "@/components/TaskTimerWidget";
 import { Dialog } from "@headlessui/react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"; 
 import { TEAM_MAP } from "@/lib/teamMap";
+import { useCallback } from "react";
 
 
+function formatDuration(seconds) {
+  if (!seconds || seconds < 1) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return [
+    h > 0 ? `${h}h` : "",
+    m > 0 ? `${m}m` : "",
+    s > 0 && h === 0 ? `${s}s` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 function TasksContent() {
+  const [taskDurations, setTaskDurations] = useState({});
   const [tasks, setTasks] = useState([]);
   const [unassignedTasks, setUnassignedTasks] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -30,6 +45,22 @@ function TasksContent() {
   // New state to track if user has an in-progress task
   const [hasInProgressTask, setHasInProgressTask] = useState(false);
   const [inProgressTaskId, setInProgressTaskId] = useState(null);
+
+  const fetchTaskDurations = useCallback(async () => {
+    if (!myEmail) return;
+    const res = await fetch(`/api/task-log?user=${encodeURIComponent(myEmail)}`);
+    const logs = await res.json();
+    const durations = {};
+    (logs || []).forEach((log) => {
+      if (!log.taskId) return;
+      durations[log.taskId] = (durations[log.taskId] || 0) + (log.durationSeconds || 0);
+    });
+    setTaskDurations(durations);
+  }, [myEmail]);
+
+  useEffect(() => {
+    fetchTaskDurations();
+  }, [tasks, myEmail, fetchTaskDurations]);
 
   useEffect(() => {
     if (session?.user?.email) fetchTasks();
@@ -295,82 +326,86 @@ setInProgressTaskId(inProgressTask?._id || null);
                         </span>
                       </div>
 
-                      <div className="flex gap-2">
-                        {task.status === "pending" && (
-                          <button
-                            onClick={async () => {
-                              
-                              try {
-                                const res = await fetch(`/api/tasks/${task._id}/status`, {
-                                  method: "PUT",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ status: "in-progress" }),
-                                });
-                                if (!res.ok) return alert("Failed to start task");
-                                const updatedTask = await res.json();
-                                localStorage.setItem(
-                                  "activeTask",
-                                  JSON.stringify({ task: updatedTask, taskType: task.type || "" })
-                                );
-                                window.dispatchEvent(new Event("storage"));
-                                fetchTasks();
-                              } catch {
-                                alert("Error starting task");
-                              }
-                            }}
-                            className={`px-3 py-1 rounded ${
-                              inProgressTaskId === task._id
-                                ? "bg-gray-400 text-gray-700 cursor-not-allowed"
-                                : "bg-green-500 text-white hover:bg-green-600"
-                            }`}
-                            disabled={inProgressTaskId === task._id}
-                          >
-                            Start
-                          </button>
+                        <div className="flex flex-col items-end gap-2">
+                {/* Duration display */}
+                <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded mb-1">
+                  {formatDuration(taskDurations[task._id])}
+                </span>
+                <div className="flex gap-2">
+                  {task.status === "pending" && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/tasks/${task._id}/status`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ status: "in-progress" }),
+                          });
+                          if (!res.ok) return alert("Failed to start task");
+                          const updatedTask = await res.json();
+                          localStorage.setItem(
+                            "activeTask",
+                            JSON.stringify({ task: updatedTask, taskType: task.type || "" })
+                          );
+                          window.dispatchEvent(new Event("storage"));
+                          fetchTasks();
+                        } catch {
+                          alert("Error starting task");
+                        }
+                      }}
+                      className={`px-3 py-1 rounded ${
+                        inProgressTaskId === task._id
+                          ? "bg-gray-400 text-gray-700 cursor-not-allowed"
+                          : "bg-green-500 text-white hover:bg-green-600"
+                      }`}
+                      disabled={inProgressTaskId === task._id}
+                    >
+                      Start
+                    </button>
+                  )}
 
-                        )}
-
-                        {task.status === "in-progress" && (
-                          <>
-                            <button
-                              onClick={() => {
-                                localStorage.setItem(
-                                  "activeTask",
-                                  JSON.stringify({ task, taskType: task.type || "" })
-                                );
-                                window.dispatchEvent(new Event("storage"));
-                              }}
-                              className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
-                            >
-                              Resume
-                            </button>
-                            <button
-                              onClick={async () => {
-                                try {
-                                  const res = await fetch(`/api/tasks/${task._id}/status`, {
-                                    method: "PUT",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ status: "completed" }),
-                                  });
-                                  if (!res.ok) return alert("Failed to complete task");
-                                  await res.json();
-                                  fetchTasks();
-                                } catch {
-                                  alert("Error completing task");
-                                }
-                              }}
-                              className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
-                            >
-                              Complete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
+                  {task.status === "in-progress" && (
+                    <>
+                      <button
+                        onClick={() => {
+                          localStorage.setItem(
+                            "activeTask",
+                            JSON.stringify({ task, taskType: task.type || "" })
+                          );
+                          window.dispatchEvent(new Event("storage"));
+                        }}
+                        className="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600"
+                      >
+                        Resume
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/tasks/${task._id}/status`, {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ status: "completed" }),
+                            });
+                            if (!res.ok) return alert("Failed to complete task");
+                            await res.json();
+                            fetchTasks();
+                          } catch {
+                            alert("Error completing task");
+                          }
+                        }}
+                        className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700"
+                      >
+                        Complete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
+          );
+        })
+      )}
+    </div>
           </div>
           <TaskTimerWidget activeTask={activeTask} />
         </div>
