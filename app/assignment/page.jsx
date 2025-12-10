@@ -72,7 +72,9 @@ function AssignmentContent() {
       "mcastilla@innovphil.com",
       "mjpanotes@innovphil.com",
       "smbernardo@innovphil.com",
-      "mgpajarillo@innovphil.com"
+      "mgpajarillo@innovphil.com",
+      "jabayon@innovphil.com",
+      "jksanjose@innovphil.com",
     ];
     if (allowedUsers.includes(currentUserEmail)) {
       const unassigned = (data || []).filter(
