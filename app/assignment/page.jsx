@@ -500,33 +500,28 @@ const filterTasksForPeriod = (tasks) => {
   onClose={() => setIsModalOpen(false)}
   className="fixed inset-0 z-50 flex items-center justify-center"
 >
-  <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={() => setIsModalOpen(false)} />
+  <div
+    className="fixed inset-0 bg-black/50"
+    aria-hidden="true"
+    onClick={() => setIsModalOpen(false)}
+  />
 
   <div
-    className="bg-white dark:bg-gray-800 rounded-3xl p-6 pt-20 z-50 max-w-3xl w-full mx-4 shadow-xl overflow-y-auto"
+    className="bg-white dark:bg-gray-800 rounded-3xl p-6 z-50 max-w-3xl w-full mx-4 shadow-xl overflow-y-auto relative"
     style={{ maxHeight: "85vh" }}
     onClick={(e) => e.stopPropagation()}
   >
-    {/* Close X button */}
-    <button
-      onClick={() => setIsModalOpen(false)}
-      className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-3xl font-bold focus:outline-none"
-      aria-label="Close"
-      type="button"
-    >
-      &times;
-    </button>
-
-    {/* Period Navigation */}
-    <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mb-6 gap-4">
+    {/* Modal Header: Period Navigation + Close Button */}
+    <div className="flex justify-between items-center mb-6">
+      {/* Period Navigation */}
       <div className="flex gap-3">
         {["daily", "weekly", "monthly"].map((p) => (
           <button
             key={p}
             onClick={() => setModalPeriod(p)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
               modalPeriod === p
-                ? "bg-gradient-to-r from-blue-700 to-blue-900 text-white shadow-md"
+                ? "bg-blue-900 text-white shadow-sm hover:bg-blue-800"
                 : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
             }`}
           >
@@ -535,6 +530,7 @@ const filterTasksForPeriod = (tasks) => {
         ))}
       </div>
 
+      {/* Date Navigation & Close Button */}
       <div className="flex items-center gap-3">
         <button
           onClick={handleModalPrev}
@@ -548,6 +544,16 @@ const filterTasksForPeriod = (tasks) => {
           className="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
         >
           &gt;
+        </button>
+
+        {/* Close Button */}
+        <button
+          onClick={() => setIsModalOpen(false)}
+          className="ml-4 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 text-2xl font-bold focus:outline-none transition"
+          aria-label="Close"
+          type="button"
+        >
+          &times;
         </button>
       </div>
     </div>
@@ -596,6 +602,9 @@ const filterTasksForPeriod = (tasks) => {
     </div>
   </div>
 </Dialog>
+
+
+
 
         </div>
 
