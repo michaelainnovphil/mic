@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import { Dialog } from "@headlessui/react";
 import TaskTimerWidget from "@/components/TaskTimerWidget";
+import { TEAM_MAP } from "@/lib/teamMap";
 
 
 function AssignmentContent() {
@@ -26,6 +27,7 @@ function AssignmentContent() {
   const [userTasks, setUserTasks] = useState({ completed: [], inProgress: [], pending: [] });
   const [modalPeriod, setModalPeriod] = useState("daily");
   const [modalDate, setModalDate] = useState(new Date());
+  const [teamView, setTeamView] = useState("all"); // toggle
 
   // Restrict access to assignment page
   useEffect(() => {
@@ -422,55 +424,82 @@ const filterTasksForPeriod = (tasks) => {
           </div>
 
           {/* Team Overview */}
-          <div>
-            <h2 className="text-xl font-semibold mb-4">Team Overview</h2>
-            <div className="space-y-4">
-              {Object.keys(teamTasks).length === 0 ? (
-                <p className="text-gray-500 dark:text-gray-400">
-                  No team tasks yet.
-                </p>
-              ) : (
-                Object.entries(teamTasks).map(([user, stats]) => {
-                  const percent =
-                    stats.total > 0
-                      ? Math.round((stats.completed / stats.total) * 100)
-                      : 0;
-                  return (
-                    <div
-                      key={user}
-                      onClick={() => handleUserClick(user)}
-                      className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2 cursor-pointer hover:ring-2 hover:ring-blue-500 transition"
-                    >
-                      <h3 className="font-bold">{user}</h3>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
-                        <div
-                          className="bg-blue-900 h-4 transition-all duration-500"
-                          style={{ width: `${percent}%` }}
-                        ></div>
-                      </div>
-                      <p className="text-sm text-gray-500">
-                        {stats.completed} / {stats.total} tasks completed ({percent}
-                        %)
-                      </p>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+<div>
+  <h2 className="text-xl font-semibold mb-4">Task Overview</h2>
 
-      {/* Modal for User Tasks */}
+  {/* View Toggle */}
+  <div className="flex gap-2 mb-4">
+    <button
+      onClick={() => setTeamView("all")}
+      className={`px-3 py-1 rounded ${
+        teamView === "all"
+          ? "bg-blue-900 text-white"
+          : "bg-gray-200 dark:bg-gray-700 dark:text-gray-200 text-gray-700"
+      }`}
+    >
+      All Users
+    </button>
+    <button
+      onClick={() => setTeamView("myTeam")}
+      className={`px-3 py-1 rounded ${
+        teamView === "myTeam"
+          ? "bg-blue-900 text-white"
+          : "bg-gray-200 dark:bg-gray-700 dark:text-gray-200 text-gray-700"
+      }`}
+    >
+      My Team
+    </button>
+  </div>
+
+  <div className="space-y-4">
+    {Object.keys(teamTasks).length === 0 ? (
+      <p className="text-gray-500 dark:text-gray-400">No team tasks yet.</p>
+    ) : (
+      Object.entries(teamTasks)
+        .filter(([user]) =>
+          teamView === "all"
+            ? true
+            : TEAM_MAP[currentUserEmail] === TEAM_MAP[user]
+        )
+        .map(([user, stats]) => {
+          const percent =
+            stats.total > 0
+              ? Math.round((stats.completed / stats.total) * 100)
+              : 0;
+          return (
+            <div
+              key={user}
+              onClick={() => handleUserClick(user)}
+              className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2 cursor-pointer hover:ring-2 hover:ring-blue-500 transition"
+            >
+              <h3 className="font-bold">{user}</h3>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
+                <div
+                  className="bg-blue-900 h-4 transition-all duration-500"
+                  style={{ width: `${percent}%` }}
+                ></div>
+              </div>
+              <p className="text-sm text-gray-500">
+                {stats.completed} / {stats.total} tasks completed ({percent}%)
+              </p>
+            </div>
+          );
+        })
+    )}
+  </div>
+</div>
+
+
+{/* Modal for User Tasks */}
 <Dialog
   open={isModalOpen}
   onClose={() => setIsModalOpen(false)}
   className="fixed inset-0 z-50 flex items-center justify-center"
 >
   <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={() => setIsModalOpen(false)} />
-  <div
-  className="bg-white dark:bg-gray-800 rounded-2xl p-6 pt-12 z-50 max-w-2xl w-full mx-4 relative"
 
+  <div
+    className="bg-white dark:bg-gray-800 rounded-2xl p-6 pt-16 z-50 max-w-2xl w-full mx-4 relative"
     style={{ maxHeight: "80vh", overflowY: "auto" }}
     onClick={e => e.stopPropagation()}
   >
@@ -483,6 +512,7 @@ const filterTasksForPeriod = (tasks) => {
     >
       &times;
     </button>
+
     {/* Period Navigation */}
     <div className="flex items-center justify-between mb-4">
       <div className="flex gap-2">
@@ -512,6 +542,7 @@ const filterTasksForPeriod = (tasks) => {
         </button>
       </div>
     </div>
+
     <h2 className="text-2xl font-bold mb-4">{selectedUser}'s Tasks</h2>
 
     <div className="space-y-6">
@@ -556,6 +587,9 @@ const filterTasksForPeriod = (tasks) => {
     </div>
   </div>
 </Dialog>
+        </div>
+
+      </div>
 
       {/* Timer widget */}
       <TaskTimerWidget />
