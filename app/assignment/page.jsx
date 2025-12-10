@@ -424,27 +424,27 @@ const filterTasksForPeriod = (tasks) => {
           </div>
 
           {/* Team Overview */}
-<div>
-  <h2 className="text-xl font-semibold mb-4">Task Overview</h2>
+<div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl shadow-md">
+  <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">Task Overview</h2>
 
   {/* View Toggle */}
-  <div className="flex gap-2 mb-4">
+  <div className="flex gap-3 mb-6">
     <button
       onClick={() => setTeamView("all")}
-      className={`px-3 py-1 rounded ${
+      className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
         teamView === "all"
-          ? "bg-blue-900 text-white"
-          : "bg-gray-200 dark:bg-gray-700 dark:text-gray-200 text-gray-700"
+          ? "bg-blue-900 text-white shadow-sm hover:bg-blue-800"
+          : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
       }`}
     >
       All Users
     </button>
     <button
       onClick={() => setTeamView("myTeam")}
-      className={`px-3 py-1 rounded ${
+      className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center gap-2 ${
         teamView === "myTeam"
-          ? "bg-blue-900 text-white"
-          : "bg-gray-200 dark:bg-gray-700 dark:text-gray-200 text-gray-700"
+          ? "bg-blue-900 text-white shadow-sm hover:bg-blue-800"
+          : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
       }`}
     >
       My Team
@@ -470,16 +470,16 @@ const filterTasksForPeriod = (tasks) => {
             <div
               key={user}
               onClick={() => handleUserClick(user)}
-              className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2 cursor-pointer hover:ring-2 hover:ring-blue-500 transition"
+              className="bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-md space-y-2 cursor-pointer hover:shadow-lg transition-all duration-300"
             >
-              <h3 className="font-bold">{user}</h3>
+              <h3 className="font-semibold text-gray-800 dark:text-gray-100">{user}</h3>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
                 <div
                   className="bg-blue-900 h-4 transition-all duration-500"
                   style={{ width: `${percent}%` }}
                 ></div>
               </div>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 {stats.completed} / {stats.total} tasks completed ({percent}%)
               </p>
             </div>
@@ -488,6 +488,10 @@ const filterTasksForPeriod = (tasks) => {
     )}
   </div>
 </div>
+
+
+
+
 
 
 {/* Modal for User Tasks */}
@@ -499,14 +503,14 @@ const filterTasksForPeriod = (tasks) => {
   <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={() => setIsModalOpen(false)} />
 
   <div
-    className="bg-white dark:bg-gray-800 rounded-2xl p-6 pt-16 z-50 max-w-2xl w-full mx-4 relative"
-    style={{ maxHeight: "80vh", overflowY: "auto" }}
-    onClick={e => e.stopPropagation()}
+    className="bg-white dark:bg-gray-800 rounded-3xl p-6 pt-20 z-50 max-w-3xl w-full mx-4 shadow-xl overflow-y-auto"
+    style={{ maxHeight: "85vh" }}
+    onClick={(e) => e.stopPropagation()}
   >
     {/* Close X button */}
     <button
       onClick={() => setIsModalOpen(false)}
-      className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-2xl font-bold focus:outline-none"
+      className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-3xl font-bold focus:outline-none"
       aria-label="Close"
       type="button"
     >
@@ -514,79 +518,85 @@ const filterTasksForPeriod = (tasks) => {
     </button>
 
     {/* Period Navigation */}
-    <div className="flex items-center justify-between mb-4">
-      <div className="flex gap-2">
+    <div className="flex flex-col sm:flex-row sm:justify-between items-start sm:items-center mb-6 gap-4">
+      <div className="flex gap-3">
         {["daily", "weekly", "monthly"].map((p) => (
           <button
             key={p}
             onClick={() => setModalPeriod(p)}
-            className={`px-3 py-1 rounded ${modalPeriod === p ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"}`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              modalPeriod === p
+                ? "bg-gradient-to-r from-blue-700 to-blue-900 text-white shadow-md"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+            }`}
           >
             {p.charAt(0).toUpperCase() + p.slice(1)}
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-2">
+
+      <div className="flex items-center gap-3">
         <button
           onClick={handleModalPrev}
-          className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+          className="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
         >
           &lt;
         </button>
-        <span className="font-semibold">{formatModalLabel()}</span>
+        <span className="font-semibold text-gray-800 dark:text-gray-100">{formatModalLabel()}</span>
         <button
           onClick={handleModalNext}
-          className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+          className="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
         >
           &gt;
         </button>
       </div>
     </div>
 
-    <h2 className="text-2xl font-bold mb-4">{selectedUser}'s Tasks</h2>
+    <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">{selectedUser}'s Tasks</h2>
 
     <div className="space-y-6">
-      <div>
-        <h3 className="font-semibold text-green-600">✅ Completed</h3>
+      <div className="bg-green-50 dark:bg-green-900 p-4 rounded-xl shadow-inner">
+        <h3 className="font-semibold text-green-600 mb-2">✅ Completed</h3>
         {filterTasksForPeriod(userTasks.completed).length > 0 ? (
-          <ul className="list-disc ml-5">
+          <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
             {filterTasksForPeriod(userTasks.completed).map((task) => (
               <li key={task._id}>{task.title}</li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-gray-500">No completed tasks</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No completed tasks</p>
         )}
       </div>
 
-      <div>
-        <h3 className="font-semibold text-yellow-600">⏳ In Progress</h3>
+      <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-inner">
+        <h3 className="font-semibold text-yellow-600 mb-2">⏳ In Progress</h3>
         {filterTasksForPeriod(userTasks.inProgress).length > 0 ? (
-          <ul className="list-disc ml-5">
+          <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
             {filterTasksForPeriod(userTasks.inProgress).map((task) => (
               <li key={task._id}>{task.title}</li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-gray-500">No in-progress tasks</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No in-progress tasks</p>
         )}
       </div>
 
-      <div>
-        <h3 className="font-semibold text-red-600">📝 Pending</h3>
+      <div className="bg-red-50 dark:bg-red-900 p-4 rounded-xl shadow-inner">
+        <h3 className="font-semibold text-red-600 mb-2">📝 Pending</h3>
         {filterTasksForPeriod(userTasks.pending).length > 0 ? (
-          <ul className="list-disc ml-5">
+          <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
             {filterTasksForPeriod(userTasks.pending).map((task) => (
               <li key={task._id}>{task.title}</li>
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-gray-500">No pending tasks</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No pending tasks</p>
         )}
       </div>
     </div>
   </div>
 </Dialog>
+
         </div>
 
       </div>
