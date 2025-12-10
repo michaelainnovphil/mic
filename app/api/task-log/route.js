@@ -11,9 +11,11 @@ export async function POST(req) {
 
     // Normalize email
     let email = body.email || body.user;
-    if (Array.isArray(email)) {
-      email = email[0];
-    }
+if (Array.isArray(email)) {
+  email = email[0];
+}
+email = email.toLowerCase();
+
 
     const taskId = body.taskId;
     const task = body.task || "";
@@ -50,6 +52,31 @@ export async function POST(req) {
     return NextResponse.json({ success: true, log: updatedLog }, { status: 200 });
   } catch (err) {
     console.error("Error in POST /api/task-log:", err);
+    return NextResponse.json(
+      { success: false, error: "Internal Server Error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(req) {
+  try {
+    await connectToDatabase();
+    const { searchParams } = new URL(req.url);
+
+    const email = searchParams.get("user")?.toLowerCase();
+    if (!email) {
+      return NextResponse.json(
+        { success: false, error: "Missing user email" },
+        { status: 400 }
+      );
+    }
+
+    const logs = await TaskLog.find({ email }).lean();
+
+    return NextResponse.json(logs, { status: 200 });
+  } catch (err) {
+    console.error("Error in GET /api/task-log:", err);
     return NextResponse.json(
       { success: false, error: "Internal Server Error" },
       { status: 500 }
