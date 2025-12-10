@@ -377,64 +377,70 @@ function AssignmentContent() {
       </div>
 
       {/* Modal for User Tasks */}
-      <Dialog
-        open={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        className="fixed inset-0 z-50 flex items-center justify-center"
-      >
-        <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 z-50 max-w-2xl w-full mx-4">
-          <h2 className="text-2xl font-bold mb-4">{selectedUser}'s Tasks</h2>
+<Dialog
+  open={isModalOpen}
+  onClose={() => setIsModalOpen(false)}
+  className="fixed inset-0 z-50 flex items-center justify-center"
+>
+  <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={() => setIsModalOpen(false)} />
+  <div
+    className="bg-white dark:bg-gray-800 rounded-2xl p-6 z-50 max-w-2xl w-full mx-4 relative"
+    style={{ maxHeight: "80vh", overflowY: "auto" }}
+    onClick={e => e.stopPropagation()}
+  >
+    {/* Close X button */}
+    <button
+      onClick={() => setIsModalOpen(false)}
+      className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-2xl font-bold focus:outline-none"
+      aria-label="Close"
+      type="button"
+    >
+      &times;
+    </button>
+    <h2 className="text-2xl font-bold mb-4">{selectedUser}'s Tasks</h2>
 
-          <div className="space-y-6">
-            <div>
-              <h3 className="font-semibold text-green-600">✅ Completed</h3>
-              {userTasks.completed.length > 0 ? (
-                <ul className="list-disc ml-5">
-                  {userTasks.completed.map((task) => (
-                    <li key={task._id}>{task.title}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-500">No completed tasks</p>
-              )}
-            </div>
+    <div className="space-y-6">
+      <div>
+        <h3 className="font-semibold text-green-600">✅ Completed</h3>
+        {userTasks.completed.length > 0 ? (
+          <ul className="list-disc ml-5">
+            {userTasks.completed.map((task) => (
+              <li key={task._id}>{task.title}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-500">No completed tasks</p>
+        )}
+      </div>
 
-            <div>
-              <h3 className="font-semibold text-yellow-600">⏳ In Progress</h3>
-              {userTasks.inProgress.length > 0 ? (
-                <ul className="list-disc ml-5">
-                  {userTasks.inProgress.map((task) => (
-                    <li key={task._id}>{task.title}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-500">No in-progress tasks</p>
-              )}
-            </div>
+      <div>
+        <h3 className="font-semibold text-yellow-600">⏳ In Progress</h3>
+        {userTasks.inProgress.length > 0 ? (
+          <ul className="list-disc ml-5">
+            {userTasks.inProgress.map((task) => (
+              <li key={task._id}>{task.title}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-500">No in-progress tasks</p>
+        )}
+      </div>
 
-            <div>
-              <h3 className="font-semibold text-red-600">📝 Pending</h3>
-              {userTasks.pending.length > 0 ? (
-                <ul className="list-disc ml-5">
-                  {userTasks.pending.map((task) => (
-                    <li key={task._id}>{task.title}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-500">No pending tasks</p>
-              )}
-            </div>
-          </div>
-
-          <button
-            onClick={() => setIsModalOpen(false)}
-            className="mt-6 bg-blue-900 text-white px-6 py-2 rounded-lg hover:bg-blue-800"
-          >
-            Close
-          </button>
-        </div>
-      </Dialog>
+      <div>
+        <h3 className="font-semibold text-red-600">📝 Pending</h3>
+        {userTasks.pending.length > 0 ? (
+          <ul className="list-disc ml-5">
+            {userTasks.pending.map((task) => (
+              <li key={task._id}>{task.title}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-gray-500">No pending tasks</p>
+        )}
+      </div>
+    </div>
+  </div>
+</Dialog>
 
       {/* Timer widget */}
       <TaskTimerWidget />

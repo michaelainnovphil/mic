@@ -611,141 +611,176 @@ function OverviewContent() {
 
         {/* Attendance Modal */}
         <Dialog
-          open={showAttendanceModal}
-          onClose={() => setShowAttendanceModal(false)}
-          className="relative z-50"
-        >
-          <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
-          <div className="fixed inset-0 flex items-center justify-center p-4">
-            <Dialog.Panel className="mx-auto max-w-2xl rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl w-full">
-  <Dialog.Title className="text-lg font-semibold text-gray-800 dark:text-white">
-    {selectedUser ? `${selectedUser.name}'s Attendance` : "Attendance Breakdown"}
-  </Dialog.Title>
-  <div className="mt-4 space-y-6 max-h-80 overflow-y-auto pr-2">
-    {(() => {
-      const today = new Date().toISOString().split('T')[0];
-      const isDaily = period === "daily";
-      const usersToShow = selectedUser
-        ? [presentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
-        : presentList;
-      return (
-        <>
-          {/* PRESENT (includes TARDY) */}
-          {usersToShow.length > 0 && (
-            <div>
-              <h4 className="font-medium text-green-600 dark:text-green-400 mb-2">
-                Present ({usersToShow.length})
-              </h4>
-              <ul className="space-y-2">
-                {usersToShow.map((u) => {
-                  const filteredShifts = isDaily
-                    ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                    : u.shifts;
-                  return (
-                    <li
-                      key={u.userId}
-                      className="p-3 rounded-lg bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 text-sm"
-                    >
-                      <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
-                      <ul className="ml-4 mt-1 text-gray-700 dark:text-gray-200 list-disc">
-                        {filteredShifts.map((s, idx) => (
-                          <li key={idx}>
-                            {new Date(s.date).toLocaleDateString()} — {s.type}
-                            {s.clockIn && (
-                              <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                            )}
-                            {s.clockOut && (
-                              <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
-                            )}
-                            {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
-                          </li>
-                        ))}
-                      </ul>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+  open={showAttendanceModal}
+  onClose={() => setShowAttendanceModal(false)}
+  className="relative z-50"
+>
+  <div className="fixed inset-0 bg-black/40" aria-hidden="true" />
+  <div className="fixed inset-0 flex items-center justify-center p-4">
+    <Dialog.Panel className="mx-auto max-w-2xl rounded-2xl bg-white dark:bg-gray-900 p-6 shadow-xl w-full">
+      <Dialog.Title className="text-lg font-semibold text-gray-800 dark:text-white">
+        {selectedUser ? `${selectedUser.name}'s Attendance` : "Attendance Breakdown"}
+      </Dialog.Title>
+      <div className="mt-4 space-y-6 max-h-80 overflow-y-auto pr-2">
+        {(() => {
+          const today = new Date().toISOString().split('T')[0];
+          const isDaily = period === "daily";
+          // PRESENT (includes TARDY)
+          const usersToShowPresent = selectedUser
+            ? [presentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+            : presentList;
+          // ABSENT
+          const usersToShowAbsent = selectedUser
+            ? [absentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+            : absentList;
+          // REST DAY
+          const usersToShowRestDay = selectedUser
+            ? [dailyStats.details.restDay.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+            : dailyStats.details.restDay;
+          // LEAVE
+          const usersToShowLeave = selectedUser
+            ? [dailyStats.details.leave.find((u) => u.userId === selectedUser.id)].filter(Boolean)
+            : dailyStats.details.leave;
 
-          {/* ABSENT */}
-          {(() => {
-            const absentUsersToShow = selectedUser
-              ? [absentList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
-              : absentList;
-            return absentUsersToShow.length > 0 && (
-              <div>
-                <h4 className="font-medium text-red-600 dark:text-red-400 mb-2">
-                  Absent ({absentUsersToShow.length})
-                </h4>
-                <ul className="space-y-2">
-                  {absentUsersToShow.map((u) => {
-                    const filteredShifts = isDaily
-                      ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                      : u.shifts;
-                    return (
-                      <li
-                        key={u.userId}
-                        className="p-3 rounded-lg bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-sm"
-                      >
-                        <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
-                        <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
-                          {filteredShifts.map((s, idx) => (
-                            <li key={idx}>
-                              {new Date(s.date).toLocaleDateString()} — Absent
-                            </li>
-                          ))}
-                        </ul>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })()}
+          return (
+            <>
+              {/* PRESENT (includes TARDY) */}
+              {usersToShowPresent.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-green-600 dark:text-green-400 mb-2">
+                    Present ({usersToShowPresent.length})
+                  </h4>
+                  <ul className="space-y-2">
+                    {usersToShowPresent.map((u) => {
+                      const filteredShifts = isDaily
+                        ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                        : u.shifts;
+                      return (
+                        <li
+                          key={u.userId}
+                          className="p-3 rounded-lg bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 text-sm"
+                        >
+                          <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                          <ul className="ml-4 mt-1 text-gray-700 dark:text-gray-200 list-disc">
+                            {filteredShifts.map((s, idx) => (
+                              <li key={idx}>
+                                {new Date(s.date).toLocaleDateString()} — {s.type}
+                                {s.clockIn && (
+                                  <> (In: {new Date(s.clockIn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                                )}
+                                {s.clockOut && (
+                                  <> (Out: {new Date(s.clockOut).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})</>
+                                )}
+                                {s.breakMinutes > 0 && <> — Break: {s.breakMinutes}m</>}
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
 
-          {/* LEAVE + REST DAY */}
-          {(() => {
-            const leaveUsersToShow = selectedUser
-              ? [leaveRestList.find((u) => u.userId === selectedUser.id)].filter(Boolean)
-              : leaveRestList;
-            return leaveUsersToShow.length > 0 && (
-              <div>
-                <h4 className="font-medium text-blue-600 dark:text-blue-400 mb-2">
-                  Leave / Rest Day ({leaveUsersToShow.length})
-                </h4>
-                <ul className="space-y-2">
-                  {leaveUsersToShow.map((u) => {
-                    const filteredShifts = isDaily
-                      ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
-                      : u.shifts;
-                    return (
-                      <li
-                        key={u.userId}
-                        className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-sm"
-                      >
-                        <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
-                        <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
-                          {filteredShifts.map((s, idx) => (
-                            <li key={idx}>
-                              {new Date(s.date).toLocaleDateString()} — {s.type}
-                            </li>
-                          ))}
-                        </ul>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })()}
-        </>
-      );
-    })()}
+              {/* ABSENT */}
+              {usersToShowAbsent.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-red-600 dark:text-red-400 mb-2">
+                    Absent ({usersToShowAbsent.length})
+                  </h4>
+                  <ul className="space-y-2">
+                    {usersToShowAbsent.map((u) => {
+                      const filteredShifts = isDaily
+                        ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                        : u.shifts;
+                      return (
+                        <li
+                          key={u.userId}
+                          className="p-3 rounded-lg bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-sm"
+                        >
+                          <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                          <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
+                            {filteredShifts.map((s, idx) => (
+                              <li key={idx}>
+                                {new Date(s.date).toLocaleDateString()} — Absent
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* REST DAY */}
+              {usersToShowRestDay.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-blue-500 dark:text-blue-400 mb-2">
+                    Rest Day ({usersToShowRestDay.length})
+                  </h4>
+                  <ul className="space-y-2">
+                    {usersToShowRestDay.map((u) => {
+                      const filteredShifts = isDaily
+                        ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                        : u.shifts;
+                      return (
+                        <li
+                          key={u.userId}
+                          className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 text-sm"
+                        >
+                          <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                          <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
+                            {filteredShifts.map((s, idx) => (
+                              <li key={idx}>
+                                {new Date(s.date).toLocaleDateString()} — {s.type}
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+
+              {/* ON LEAVE */}
+              {usersToShowLeave.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-indigo-500 dark:text-indigo-400 mb-2">
+                    On Leave ({usersToShowLeave.length})
+                  </h4>
+                  <ul className="space-y-2">
+                    {usersToShowLeave.map((u) => {
+                      const filteredShifts = isDaily
+                        ? u.shifts.filter((s) => new Date(s.date).toISOString().split('T')[0] === today)
+                        : u.shifts;
+                      return (
+                        <li
+                          key={u.userId}
+                          className="p-3 rounded-lg bg-indigo-50 dark:bg-indigo-900 border border-indigo-200 dark:border-indigo-700 text-sm"
+                        >
+                          <p className="font-medium text-gray-800 dark:text-gray-100">{u.name}</p>
+                          <ul className="ml-4 mt-1 list-disc text-gray-700 dark:text-gray-200">
+                            {filteredShifts.map((s, idx) => (
+                              <li key={idx}>
+                                {new Date(s.date).toLocaleDateString()} — {s.type}
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </>
+          );
+        })()}
+      </div>
+    </Dialog.Panel>
   </div>
-</Dialog.Panel>
-          </div>
-        </Dialog>
+</Dialog>
 
         {/* Tardiness Modal */}
         <Dialog
