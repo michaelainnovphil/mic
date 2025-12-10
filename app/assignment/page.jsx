@@ -24,6 +24,8 @@ function AssignmentContent() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [userTasks, setUserTasks] = useState({ completed: [], inProgress: [], pending: [] });
+  const [modalPeriod, setModalPeriod] = useState("daily");
+  const [modalDate, setModalDate] = useState(new Date());
 
   // Restrict access to assignment page
   useEffect(() => {
@@ -86,6 +88,85 @@ function AssignmentContent() {
       setAssignedTasks(managerTasks);
     }
   };
+
+  const formatModalLabel = () => {
+  if (modalPeriod === "daily") {
+    return modalDate.toLocaleDateString();
+  }
+  if (modalPeriod === "weekly") {
+    const start = new Date(modalDate);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+  }
+  if (modalPeriod === "monthly") {
+    return modalDate.toLocaleString("default", { month: "long", year: "numeric" });
+  }
+  return "";
+};
+
+const handleModalPrev = () => {
+  if (modalPeriod === "daily") {
+    setModalDate(prev => new Date(prev.setDate(prev.getDate() - 1)));
+  } else if (modalPeriod === "weekly") {
+    setModalDate(prev => new Date(prev.setDate(prev.getDate() - 7)));
+  } else if (modalPeriod === "monthly") {
+    setModalDate(prev => new Date(prev.setMonth(prev.getMonth() - 1)));
+  }
+};
+
+const handleModalNext = () => {
+  if (modalPeriod === "daily") {
+    setModalDate(prev => new Date(prev.setDate(prev.getDate() + 1)));
+  } else if (modalPeriod === "weekly") {
+    setModalDate(prev => new Date(prev.setDate(prev.getDate() + 7)));
+  } else if (modalPeriod === "monthly") {
+    setModalDate(prev => new Date(prev.setMonth(prev.getMonth() + 1)));
+  }
+};
+
+// Filter tasks for modal view
+// Filter tasks for modal view (NO dueDate required)
+const filterTasksForPeriod = (tasks) => {
+  return tasks.filter((t) => {
+    const tDate = t.dueDate
+      ? new Date(t.dueDate)
+      : t.createdAt
+      ? new Date(t.createdAt)
+      : null;
+
+    if (!tDate) return false;
+
+    if (modalPeriod === "daily") {
+      const dayStr = modalDate.toISOString().split("T")[0];
+      return tDate.toISOString().split("T")[0] === dayStr;
+    }
+
+    if (modalPeriod === "weekly") {
+      const start = new Date(modalDate);
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - start.getDay());
+
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+
+      return tDate >= start && tDate <= end;
+    }
+
+    if (modalPeriod === "monthly") {
+      const month = modalDate.getMonth();
+      const year = modalDate.getFullYear();
+      return (
+        tDate.getMonth() === month && tDate.getFullYear() === year
+      );
+    }
+
+    return true;
+  });
+};
+
 
   const fetchTeamTasks = async () => {
     const res = await fetch("/api/tasks");
@@ -384,7 +465,8 @@ function AssignmentContent() {
 >
   <div className="fixed inset-0 bg-black/50" aria-hidden="true" onClick={() => setIsModalOpen(false)} />
   <div
-    className="bg-white dark:bg-gray-800 rounded-2xl p-6 z-50 max-w-2xl w-full mx-4 relative"
+  className="bg-white dark:bg-gray-800 rounded-2xl p-6 pt-12 z-50 max-w-2xl w-full mx-4 relative"
+
     style={{ maxHeight: "80vh", overflowY: "auto" }}
     onClick={e => e.stopPropagation()}
   >
@@ -397,14 +479,43 @@ function AssignmentContent() {
     >
       &times;
     </button>
+    {/* Period Navigation */}
+    <div className="flex items-center justify-between mb-4">
+      <div className="flex gap-2">
+        {["daily", "weekly", "monthly"].map((p) => (
+          <button
+            key={p}
+            onClick={() => setModalPeriod(p)}
+            className={`px-3 py-1 rounded ${modalPeriod === p ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200"}`}
+          >
+            {p.charAt(0).toUpperCase() + p.slice(1)}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleModalPrev}
+          className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+        >
+          &lt;
+        </button>
+        <span className="font-semibold">{formatModalLabel()}</span>
+        <button
+          onClick={handleModalNext}
+          className="px-2 py-1 rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+        >
+          &gt;
+        </button>
+      </div>
+    </div>
     <h2 className="text-2xl font-bold mb-4">{selectedUser}'s Tasks</h2>
 
     <div className="space-y-6">
       <div>
         <h3 className="font-semibold text-green-600">✅ Completed</h3>
-        {userTasks.completed.length > 0 ? (
+        {filterTasksForPeriod(userTasks.completed).length > 0 ? (
           <ul className="list-disc ml-5">
-            {userTasks.completed.map((task) => (
+            {filterTasksForPeriod(userTasks.completed).map((task) => (
               <li key={task._id}>{task.title}</li>
             ))}
           </ul>
@@ -415,9 +526,9 @@ function AssignmentContent() {
 
       <div>
         <h3 className="font-semibold text-yellow-600">⏳ In Progress</h3>
-        {userTasks.inProgress.length > 0 ? (
+        {filterTasksForPeriod(userTasks.inProgress).length > 0 ? (
           <ul className="list-disc ml-5">
-            {userTasks.inProgress.map((task) => (
+            {filterTasksForPeriod(userTasks.inProgress).map((task) => (
               <li key={task._id}>{task.title}</li>
             ))}
           </ul>
@@ -428,9 +539,9 @@ function AssignmentContent() {
 
       <div>
         <h3 className="font-semibold text-red-600">📝 Pending</h3>
-        {userTasks.pending.length > 0 ? (
+        {filterTasksForPeriod(userTasks.pending).length > 0 ? (
           <ul className="list-disc ml-5">
-            {userTasks.pending.map((task) => (
+            {filterTasksForPeriod(userTasks.pending).map((task) => (
               <li key={task._id}>{task.title}</li>
             ))}
           </ul>
