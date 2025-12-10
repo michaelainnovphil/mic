@@ -39,7 +39,9 @@ function AssignmentContent() {
       "mcastilla@innovphil.com",
       "mjpanotes@innovphil.com",
       "smbernardo@innovphil.com",
-      "mgpajarillo@innovphil.com"
+      "mgpajarillo@innovphil.com",
+      "jabayon@innovphil.com",
+      "jksanjose@innovphil.com",
     ];
     if (!session || !allowedUsers.includes(session.user.email)) {
       router.replace("/unauthorized");
