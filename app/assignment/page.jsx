@@ -9,10 +9,25 @@ import TaskTimerWidget from "@/components/TaskTimerWidget";
 import { TEAM_MAP } from "@/lib/teamMap";
 
 
+
+function formatDuration(seconds) {
+  if (!seconds || seconds < 1) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return [
+    h > 0 ? `${h}h` : "",
+    m > 0 ? `${m}m` : "",
+    s > 0 && h === 0 ? `${s}s` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+
 function AssignmentContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
-
   const currentUserEmail = session?.user?.email || "";
   const [refreshKey, setRefreshKey] = useState(0);
   const [title, setTitle] = useState("");
@@ -27,9 +42,11 @@ function AssignmentContent() {
   const [userTasks, setUserTasks] = useState({ completed: [], inProgress: [], pending: [] });
   const [modalPeriod, setModalPeriod] = useState("daily");
   const [modalDate, setModalDate] = useState(new Date());
-  const [teamView, setTeamView] = useState("all"); // toggle
+  const [teamView, setTeamView] = useState("all"); 
+  const [taskDurations, setTaskDurations] = useState({});
 
-  // Restrict access to assignment page
+
+  // Restrict
   useEffect(() => {
     if (status === "loading") return;
 
@@ -94,6 +111,8 @@ function AssignmentContent() {
       setAssignedTasks(managerTasks);
     }
   };
+
+  
 
   const formatModalLabel = () => {
   if (modalPeriod === "daily") {
@@ -199,27 +218,43 @@ const filterTasksForPeriod = (tasks) => {
   };
 
   const fetchUserTasks = async (user) => {
-    const res = await fetch("/api/tasks");
-    const data = await res.json();
+  const [taskRes, logRes] = await Promise.all([
+    fetch("/api/tasks"),
+    fetch(`/api/task-log?user=${encodeURIComponent(user)}`)
+  ]);
 
-    const completed = [];
-    const inProgress = [];
-    const pending = [];
+  const tasks = await taskRes.json();
+  const logs = await logRes.json();
 
-    (data || []).forEach((task) => {
-      if (task.assignedTo?.includes(user)) {
-        if (task.status === "completed") {
-          completed.push(task);
-        } else if (task.status === "in-progress") {
-          inProgress.push(task);
-        } else {
-          pending.push(task);
-        }
-      }
-    });
+  const completed = [];
+  const inProgress = [];
+  const pending = [];
 
-    setUserTasks({ completed, inProgress, pending });
-  };
+  // ✅ Aggregate durations from logs
+  const durations = {};
+  (logs || []).forEach((log) => {
+    if (!log.taskId) return;
+    durations[log.taskId] =
+      (durations[log.taskId] || 0) + (log.durationSeconds || 0);
+  });
+
+  // ✅ Categorize tasks
+  (tasks || []).forEach((task) => {
+    if (!task.assignedTo?.includes(user)) return;
+
+    if (task.status === "completed") completed.push(task);
+    else if (task.status === "in-progress") inProgress.push(task);
+    else pending.push(task);
+  });
+
+  setUserTasks({ completed, inProgress, pending });
+  setTaskDurations(durations);
+};
+
+
+
+
+
 
   const handleUserClick = (user) => {
     setSelectedUser(user);
@@ -491,9 +526,6 @@ const filterTasksForPeriod = (tasks) => {
 
 
 
-
-
-
 {/* Modal for User Tasks */}
 <Dialog
   open={isModalOpen}
@@ -511,8 +543,9 @@ const filterTasksForPeriod = (tasks) => {
     style={{ maxHeight: "85vh" }}
     onClick={(e) => e.stopPropagation()}
   >
-    {/* Modal Header: Period Navigation + Close Button */}
+    {/* Modal Header */}
     <div className="flex justify-between items-center mb-6">
+
       {/* Period Navigation */}
       <div className="flex gap-3">
         {["daily", "weekly", "monthly"].map((p) => (
@@ -530,7 +563,7 @@ const filterTasksForPeriod = (tasks) => {
         ))}
       </div>
 
-      {/* Date Navigation & Close Button */}
+      {/* Date Navigation + Close Button */}
       <div className="flex items-center gap-3">
         <button
           onClick={handleModalPrev}
@@ -538,7 +571,11 @@ const filterTasksForPeriod = (tasks) => {
         >
           &lt;
         </button>
-        <span className="font-semibold text-gray-800 dark:text-gray-100">{formatModalLabel()}</span>
+
+        <span className="font-semibold text-gray-800 dark:text-gray-100">
+          {formatModalLabel()}
+        </span>
+
         <button
           onClick={handleModalNext}
           className="px-3 py-1 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
@@ -546,10 +583,12 @@ const filterTasksForPeriod = (tasks) => {
           &gt;
         </button>
 
-        {/* Close Button */}
+        {/* Close Button INSIDE modal */}
         <button
           onClick={() => setIsModalOpen(false)}
-          className="ml-4 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 text-2xl font-bold focus:outline-none transition"
+          className="ml-4 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 
+                     rounded-full text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-600 
+                     text-2xl font-bold focus:outline-none transition"
           aria-label="Close"
           type="button"
         >
@@ -558,50 +597,80 @@ const filterTasksForPeriod = (tasks) => {
       </div>
     </div>
 
-    <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">{selectedUser}'s Tasks</h2>
+    <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">
+      {selectedUser}'s Tasks
+    </h2>
 
+    {/* TASK SECTIONS */}
     <div className="space-y-6">
-      <div className="bg-green-50 dark:bg-green-900 p-4 rounded-xl shadow-inner">
-        <h3 className="font-semibold text-green-600 mb-2">✅ Completed</h3>
-        {filterTasksForPeriod(userTasks.completed).length > 0 ? (
-          <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
-            {filterTasksForPeriod(userTasks.completed).map((task) => (
-              <li key={task._id}>{task.title}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400">No completed tasks</p>
-        )}
-      </div>
 
-      <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-inner">
-        <h3 className="font-semibold text-yellow-600 mb-2">⏳ In Progress</h3>
-        {filterTasksForPeriod(userTasks.inProgress).length > 0 ? (
-          <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
-            {filterTasksForPeriod(userTasks.inProgress).map((task) => (
-              <li key={task._id}>{task.title}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400">No in-progress tasks</p>
-        )}
-      </div>
+      {/* COMPLETED */}
+<div className="bg-green-50 dark:bg-green-900 p-4 rounded-xl shadow-inner">
+  <h3 className="font-semibold text-green-600 mb-2">✅ Completed</h3>
 
-      <div className="bg-red-50 dark:bg-red-900 p-4 rounded-xl shadow-inner">
-        <h3 className="font-semibold text-red-600 mb-2">📝 Pending</h3>
-        {filterTasksForPeriod(userTasks.pending).length > 0 ? (
-          <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
-            {filterTasksForPeriod(userTasks.pending).map((task) => (
-              <li key={task._id}>{task.title}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-500 dark:text-gray-400">No pending tasks</p>
-        )}
-      </div>
+  {filterTasksForPeriod(userTasks.completed).length > 0 ? (
+    <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
+      {filterTasksForPeriod(userTasks.completed).map((task) => (
+        <li key={task._id} className="flex items-center gap-2">
+          <span className="font-medium">{task.title}</span>
+          {/* Duration display */}
+          <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+            {formatDuration(taskDurations[task._id])}
+          </span>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-sm text-gray-500 dark:text-gray-400">No completed tasks</p>
+  )}
+</div>
+
+{/* IN PROGRESS */}
+<div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-inner">
+  <h3 className="font-semibold text-yellow-600 mb-2">⏳ In Progress</h3>
+
+  {filterTasksForPeriod(userTasks.inProgress).length > 0 ? (
+    <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
+      {filterTasksForPeriod(userTasks.inProgress).map((task) => (
+        <li key={task._id} className="flex items-center gap-2">
+          <span className="font-medium">{task.title}</span>
+          <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+            {formatDuration(taskDurations[task._id])}
+          </span>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-sm text-gray-500 dark:text-gray-400">No in-progress tasks</p>
+  )}
+</div>
+
+{/* PENDING */}
+<div className="bg-red-50 dark:bg-red-900 p-4 rounded-xl shadow-inner">
+  <h3 className="font-semibold text-red-600 mb-2">📝 Pending</h3>
+
+  {filterTasksForPeriod(userTasks.pending).length > 0 ? (
+    <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
+      {filterTasksForPeriod(userTasks.pending).map((task) => (
+        <li key={task._id} className="flex items-center gap-2">
+          <span className="font-medium">{task.title}</span>
+          <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+            {formatDuration(taskDurations[task._id])}
+          </span>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p className="text-sm text-gray-500 dark:text-gray-400">No pending tasks</p>
+  )}
+</div>
+
+
     </div>
   </div>
 </Dialog>
+
+
 
 
 

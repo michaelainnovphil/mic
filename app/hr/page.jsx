@@ -238,9 +238,7 @@ function OverviewContent() {
         firstLogin,
       };
 
-      if (userShifts.some((s) => s.status === "Present")) grouped.present.push(detail);
-      else if (userShifts.some((s) => s.status === "Tardy")) grouped.tardy.push(detail);
-      else grouped.absent.push(detail);
+      
 
       if (userShifts.some((s) => s.status === "Present")) groupedForCharts.present.push(detail);
       else if (userShifts.some((s) => s.status === "Tardy")) groupedForCharts.tardy.push(detail);
