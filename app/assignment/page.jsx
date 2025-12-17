@@ -44,6 +44,9 @@ function AssignmentContent() {
   const [modalDate, setModalDate] = useState(new Date());
   const [teamView, setTeamView] = useState("all"); 
   const [taskDurations, setTaskDurations] = useState({});
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+
 
 
   // Restrict
@@ -314,6 +317,30 @@ const filterTasksForPeriod = (tasks) => {
       alert(data.error || "Failed to delete task");
     }
   };
+
+  const toggleTaskSelection = (taskId) => {
+  setSelectedTaskIds((prev) => {
+    const next = new Set(prev);
+    next.has(taskId) ? next.delete(taskId) : next.add(taskId);
+    return next;
+  });
+};
+
+const confirmBulkDelete = async () => {
+  if (selectedTaskIds.size === 0) return;
+  if (!confirm("Delete selected tasks?")) return;
+
+  for (const id of selectedTaskIds) {
+    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+  }
+
+  // refresh modal data
+  fetchUserTasks(selectedUser);
+
+  setSelectedTaskIds(new Set());
+  setDeleteMode(false);
+};
+
 
   if (status === "loading") return <p>Loading...</p>;
 
@@ -597,9 +624,39 @@ const filterTasksForPeriod = (tasks) => {
       </div>
     </div>
 
-    <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-gray-100">
-      {selectedUser}'s Tasks
-    </h2>
+    <div className="flex justify-between items-center mb-6">
+  <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+    {selectedUser}'s Tasks
+  </h2>
+
+  {!deleteMode ? (
+    <button
+      onClick={() => setDeleteMode(true)}
+      className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition"
+    >
+      Delete
+    </button>
+  ) : (
+    <div className="flex gap-2">
+      <button
+        onClick={confirmBulkDelete}
+        className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition"
+      >
+        Confirm
+      </button>
+      <button
+        onClick={() => {
+          setDeleteMode(false);
+          setSelectedTaskIds(new Set());
+        }}
+        className="px-4 py-2 rounded-lg bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+      >
+        Cancel
+      </button>
+    </div>
+  )}
+</div>
+
 
     {/* TASK SECTIONS */}
     <div className="space-y-6">
@@ -611,13 +668,30 @@ const filterTasksForPeriod = (tasks) => {
   {filterTasksForPeriod(userTasks.completed).length > 0 ? (
     <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
       {filterTasksForPeriod(userTasks.completed).map((task) => (
-        <li key={task._id} className="flex items-center gap-2">
-          <span className="font-medium">{task.title}</span>
-          {/* Duration display */}
-          <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-            {formatDuration(taskDurations[task._id])}
-          </span>
-        </li>
+        <li
+  key={task._id}
+  onClick={() => deleteMode && toggleTaskSelection(task._id)}
+  className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition
+    ${deleteMode ? "hover:bg-red-100 dark:hover:bg-red-900" : ""}
+    ${selectedTaskIds.has(task._id) ? "bg-red-200 dark:bg-red-800" : ""}
+  `}
+>
+  {deleteMode && (
+    <input
+      type="checkbox"
+      readOnly
+      checked={selectedTaskIds.has(task._id)}
+      className="accent-red-600"
+    />
+  )}
+
+  <span className="font-medium">{task.title}</span>
+
+  <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+    {formatDuration(taskDurations[task._id])}
+  </span>
+</li>
+
       ))}
     </ul>
   ) : (
@@ -632,12 +706,30 @@ const filterTasksForPeriod = (tasks) => {
   {filterTasksForPeriod(userTasks.inProgress).length > 0 ? (
     <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
       {filterTasksForPeriod(userTasks.inProgress).map((task) => (
-        <li key={task._id} className="flex items-center gap-2">
-          <span className="font-medium">{task.title}</span>
-          <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-            {formatDuration(taskDurations[task._id])}
-          </span>
-        </li>
+        <li
+  key={task._id}
+  onClick={() => deleteMode && toggleTaskSelection(task._id)}
+  className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition
+    ${deleteMode ? "hover:bg-red-100 dark:hover:bg-red-900" : ""}
+    ${selectedTaskIds.has(task._id) ? "bg-red-200 dark:bg-red-800" : ""}
+  `}
+>
+  {deleteMode && (
+    <input
+      type="checkbox"
+      readOnly
+      checked={selectedTaskIds.has(task._id)}
+      className="accent-red-600"
+    />
+  )}
+
+  <span className="font-medium">{task.title}</span>
+
+  <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+    {formatDuration(taskDurations[task._id])}
+  </span>
+</li>
+
       ))}
     </ul>
   ) : (
@@ -652,12 +744,30 @@ const filterTasksForPeriod = (tasks) => {
   {filterTasksForPeriod(userTasks.pending).length > 0 ? (
     <ul className="list-disc ml-5 text-gray-800 dark:text-gray-100">
       {filterTasksForPeriod(userTasks.pending).map((task) => (
-        <li key={task._id} className="flex items-center gap-2">
-          <span className="font-medium">{task.title}</span>
-          <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-            {formatDuration(taskDurations[task._id])}
-          </span>
-        </li>
+        <li
+  key={task._id}
+  onClick={() => deleteMode && toggleTaskSelection(task._id)}
+  className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition
+    ${deleteMode ? "hover:bg-red-100 dark:hover:bg-red-900" : ""}
+    ${selectedTaskIds.has(task._id) ? "bg-red-200 dark:bg-red-800" : ""}
+  `}
+>
+  {deleteMode && (
+    <input
+      type="checkbox"
+      readOnly
+      checked={selectedTaskIds.has(task._id)}
+      className="accent-red-600"
+    />
+  )}
+
+  <span className="font-medium">{task.title}</span>
+
+  <span className="text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+    {formatDuration(taskDurations[task._id])}
+  </span>
+</li>
+
       ))}
     </ul>
   ) : (
