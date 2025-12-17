@@ -776,8 +776,10 @@ function OverviewContent() {
             <span className="font-medium text-gray-900 dark:text-gray-100">{u.name}</span>
             <ul className="ml-4 list-disc text-yellow-700 dark:text-yellow-200">
               {u.shifts
-                .filter((s) => s.status === "Tardy")
-                .map((s, idx) => (
+  .filter((s) => s.status === "Tardy")
+  .sort((a, b) => new Date(a.date) - new Date(b.date))
+  .map((s, idx) => (
+
                   <li key={idx}>
                     {s.date
                       ? new Date(s.date).toLocaleDateString()
