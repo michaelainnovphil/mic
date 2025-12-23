@@ -304,19 +304,34 @@ const filterTasksForPeriod = (tasks) => {
 
   //  Delete Task
   const handleDeleteTask = async (id) => {
-    if (!confirm("Are you sure you want to delete this task?")) return;
+  if (!confirm("Are you sure you want to delete this task?")) return;
 
-    const res = await fetch(`/api/tasks/${id}`, {
-      method: "DELETE",
-    });
+  const taskToDelete = assignedTasks.find((t) => t._id === id);
+  const durationSeconds = taskDurations[id] || 0; // get duration of task
 
-    if (res.ok) {
-      await fetchAssignedTasks();
-    } else {
-      const data = await res.json();
-      alert(data.error || "Failed to delete task");
-    }
-  };
+  const res = await fetch(`/api/tasks/${id}`, {
+    method: "DELETE",
+  });
+
+  if (res.ok) {
+    await fetchAssignedTasks();
+    
+    // Update dashboard via event
+    onTaskDeleted(durationSeconds, taskToDelete.assignedTo?.[0]);
+  } else {
+    const data = await res.json();
+    alert(data.error || "Failed to delete task");
+  }
+};
+
+const onTaskDeleted = (deletedTaskDurationSeconds, userEmail) => {
+  // Dispatch a custom event
+  window.dispatchEvent(
+    new CustomEvent("taskDeleted", {
+      detail: { deletedTaskDurationSeconds, userEmail },
+    })
+  );
+};
 
   const toggleTaskSelection = (taskId) => {
   setSelectedTaskIds((prev) => {
@@ -331,15 +346,23 @@ const confirmBulkDelete = async () => {
   if (!confirm("Delete selected tasks?")) return;
 
   for (const id of selectedTaskIds) {
-    await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+    const taskToDelete = assignedTasks.find((t) => t._id === id);
+    const durationSeconds = taskDurations[id] || 0;
+
+    const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" });
+    if (res.ok && taskToDelete) {
+      // Dispatch event for dashboard update
+      onTaskDeleted(durationSeconds, taskToDelete.assignedTo?.[0]);
+    }
   }
 
   // refresh modal data
-  fetchUserTasks(selectedUser);
+  if (selectedUser) fetchUserTasks(selectedUser);
 
   setSelectedTaskIds(new Set());
   setDeleteMode(false);
 };
+
 
 
   if (status === "loading") return <p>Loading...</p>;
@@ -472,13 +495,12 @@ const confirmBulkDelete = async () => {
 
                     {task.description && <p className="text-sm">{task.description}</p>}
                     <p className="text-sm text-gray-500">Priority: {task.priority}</p>
-                    {task.assignedTo && (
-                      <p className="text-sm">
-                        Assigned to: {Array.isArray(task.assignedTo)
-                          ? task.assignedTo.join(", ")
-                          : task.assignedTo}
-                      </p>
-                    )}
+                    {task.createdBy && (
+  <p className="text-sm text-gray-600 dark:text-gray-400">
+    Assigned by: {task.createdBy}
+  </p>
+)}
+
                   </div>
                 ))
               )}

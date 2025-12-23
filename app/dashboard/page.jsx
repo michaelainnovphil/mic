@@ -184,6 +184,48 @@ export default function UserList() {
   fetchHRStats();
 }, []);
 
+useEffect(() => {
+  const handler = (e) => {
+    const { deletedTaskDurationSeconds, userEmail } = e.detail;
+    const durationHours = deletedTaskDurationSeconds / 3600;
+
+    // Update shiftStats
+    setShiftStats((prev) => {
+      if (!prev[userEmail]) return prev;
+
+      const updated = { ...prev };
+      updated[userEmail] = {
+        ...updated[userEmail],
+        usedHours: Math.max(updated[userEmail].usedHours - durationHours, 0),
+        remaining: Math.max(updated[userEmail].remaining + durationHours, 0),
+      };
+      return updated;
+    });
+
+    // Update selectedUser.taskStats if modal open
+    setSelectedUser((prev) => {
+      if (!prev) return prev;
+      const email = (prev.mail || prev.userPrincipalName)?.toLowerCase().trim();
+      if (email !== userEmail) return prev;
+
+      return {
+        ...prev,
+        taskStats: {
+          ...prev.taskStats,
+          totalDuration: Math.max(
+            (prev.taskStats?.totalDuration || 0) - durationHours,
+            0
+          ),
+        },
+      };
+    });
+  };
+
+  window.addEventListener("taskDeleted", handler);
+  return () => window.removeEventListener("taskDeleted", handler);
+}, []);
+
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
