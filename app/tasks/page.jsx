@@ -41,6 +41,8 @@ function TasksContent() {
   const [assignedTo, setAssignedTo] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [activeTask, setActiveTask] = useState(null);
+  const [users, setUsers] = useState([]);
+
 
   // New state to track if user has an in-progress task
   const [hasInProgressTask, setHasInProgressTask] = useState(false);
@@ -57,6 +59,21 @@ function TasksContent() {
     });
     setTaskDurations(durations);
   }, [myEmail]);
+
+  useEffect(() => {
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("/api/users");
+      const data = await res.json();
+      setUsers(data.value || []);
+    } catch (err) {
+      console.error("Failed to fetch users", err);
+    }
+  };
+
+  fetchUsers();
+}, []);
+
 
   useEffect(() => {
     fetchTaskDurations();
@@ -313,14 +330,20 @@ setInProgressTaskId(inProgressTask?._id || null);
                           )}
                         </div>
 
-                        {task.description && (
-                          <p className="text-sm text-gray-600 dark:text-gray-300">{task.description}</p>
-                        )}
                         {task.createdBy && (
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
-                            Assigned by: <strong>{task.createdBy}</strong>
-                          </p>
-                        )}
+  <p className="text-sm text-gray-600 dark:text-gray-400">
+    Assigned by:{" "}
+    <strong>
+      {users.find(
+        (u) =>
+          (u.mail || u.userPrincipalName)?.toLowerCase() ===
+          task.createdBy.toLowerCase()
+      )?.displayName || task.createdBy}
+    </strong>
+  </p>
+)}
+
+
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
                           {task.status.charAt(0).toUpperCase() + task.status.slice(1)}
                         </span>

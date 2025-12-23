@@ -497,9 +497,15 @@ const confirmBulkDelete = async () => {
                     <p className="text-sm text-gray-500">Priority: {task.priority}</p>
                     {task.createdBy && (
   <p className="text-sm text-gray-600 dark:text-gray-400">
-    Assigned by: {task.createdBy}
+    Assigned by: {
+      teamMembers.find(
+        (u) =>
+          (u.mail || u.userPrincipalName) === task.createdBy
+      )?.displayName || task.createdBy
+    }
   </p>
 )}
+
 
                   </div>
                 ))
