@@ -51,6 +51,9 @@ const Header = () => {
             "mgpajarillo@innovphil.com",
             "jksanjose@innovphil.com",
             "jabayon@innovphil.com",
+            "apanotes@innovphil.com",
+            "vgarcia@innovphil.com",
+            "mltperez@innovphil.com",
           ];
           if (
             allowedEmails.includes(

@@ -64,6 +64,9 @@ function AssignmentContent() {
       "mgpajarillo@innovphil.com",
       "jabayon@innovphil.com",
       "jksanjose@innovphil.com",
+      "apanotes@innovphil.com",
+      "vgarcia@innovphil.com",
+      "mltperez@innovphil.com",
     ];
     if (!session || !allowedUsers.includes(session.user.email)) {
       router.replace("/unauthorized");
@@ -99,6 +102,9 @@ function AssignmentContent() {
       "mgpajarillo@innovphil.com",
       "jabayon@innovphil.com",
       "jksanjose@innovphil.com",
+      "apanotes@innovphil.com",
+      "vgarcia@innovphil.com",
+      "mltperez@innovphil.com",
     ];
     if (allowedUsers.includes(currentUserEmail)) {
       const unassigned = (data || []).filter(
@@ -304,7 +310,8 @@ const filterTasksForPeriod = (tasks) => {
 
   //  Delete Task
   const handleDeleteTask = async (id) => {
-  if (!confirm("Are you sure you want to delete this task?")) return;
+  setDeleteTarget({ type: "single", taskId: id });
+
 
   const taskToDelete = assignedTasks.find((t) => t._id === id);
   const durationSeconds = taskDurations[id] || 0; // get duration of task

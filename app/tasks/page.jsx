@@ -330,18 +330,25 @@ setInProgressTaskId(inProgressTask?._id || null);
                           )}
                         </div>
 
+                        {task.description && (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            {task.description}
+                          </p>
+                        )}
+
+
                         {task.createdBy && (
-  <p className="text-sm text-gray-600 dark:text-gray-400">
-    Assigned by:{" "}
-    <strong>
-      {users.find(
-        (u) =>
-          (u.mail || u.userPrincipalName)?.toLowerCase() ===
-          task.createdBy.toLowerCase()
-      )?.displayName || task.createdBy}
-    </strong>
-  </p>
-)}
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            Assigned by:{" "}
+                            <strong>
+                              {users.find(
+                                (u) =>
+                                  (u.mail || u.userPrincipalName)?.toLowerCase() ===
+                                  task.createdBy.toLowerCase()
+                              )?.displayName || task.createdBy}
+                            </strong>
+                          </p>
+                        )}
 
 
                         <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
