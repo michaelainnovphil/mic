@@ -10,6 +10,7 @@ import { TEAM_MAP } from "@/lib/teamMap";
 
 
 
+
 function formatDuration(seconds) {
   if (!seconds || seconds < 1) return "0m";
   const h = Math.floor(seconds / 3600);
@@ -46,6 +47,9 @@ function AssignmentContent() {
   const [taskDurations, setTaskDurations] = useState({});
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+const [taskToDelete, setTaskToDelete] = useState(null);
+
 
 
 
@@ -309,27 +313,37 @@ const filterTasksForPeriod = (tasks) => {
 
 
   //  Delete Task
-  const handleDeleteTask = async (id) => {
-  setDeleteTarget({ type: "single", taskId: id });
+  const handleDeleteTask = async () => {
+  if (!taskToDelete) return;
 
+  try {
+    const durationSeconds = taskDurations[taskToDelete._id] || 0;
 
-  const taskToDelete = assignedTasks.find((t) => t._id === id);
-  const durationSeconds = taskDurations[id] || 0; // get duration of task
+    const res = await fetch(`/api/tasks/${taskToDelete._id}`, {
+      method: "DELETE",
+    });
 
-  const res = await fetch(`/api/tasks/${id}`, {
-    method: "DELETE",
-  });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to delete task");
+      return;
+    }
 
-  if (res.ok) {
     await fetchAssignedTasks();
-    
-    // Update dashboard via event
+    await fetchTeamTasks();
+
     onTaskDeleted(durationSeconds, taskToDelete.assignedTo?.[0]);
-  } else {
-    const data = await res.json();
-    alert(data.error || "Failed to delete task");
+  } catch (err) {
+    console.error("Delete failed:", err);
+    alert("Error deleting task");
+  } finally {
+    setConfirmDeleteOpen(false);
+    setTaskToDelete(null);
   }
 };
+
+
+
 
 const onTaskDeleted = (deletedTaskDurationSeconds, userEmail) => {
   // Dispatch a custom event
@@ -493,11 +507,15 @@ const confirmBulkDelete = async () => {
                       <h3 className="font-bold">{task.title}</h3>
 
                       <button
-                        onClick={() => handleDeleteTask(task._id)}
-                        className="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1 rounded"
-                      >
-                        🗑 Delete
-                      </button>
+  onClick={() => {
+    setTaskToDelete(task);
+    setConfirmDeleteOpen(true);
+  }}
+  className="bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1 rounded"
+>
+  🗑 Delete
+</button>
+
                     </div>
 
                     {task.description && <p className="text-sm">{task.description}</p>}
@@ -586,6 +604,46 @@ const confirmBulkDelete = async () => {
   </div>
 </div>
 
+<Dialog
+  open={confirmDeleteOpen}
+  onClose={() => setConfirmDeleteOpen(false)}
+  className="relative z-50"
+>
+  <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
+
+  <div className="fixed inset-0 flex items-center justify-center p-4">
+    <Dialog.Panel className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6">
+      <Dialog.Title className="text-lg font-bold text-red-600 mb-3">
+        Confirm Delete
+      </Dialog.Title>
+
+      <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+        Are you sure you want to delete{" "}
+        <strong>{taskToDelete?.title}</strong>?  
+        This action cannot be undone.
+      </p>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={() => {
+            setConfirmDeleteOpen(false);
+            setTaskToDelete(null);
+          }}
+          className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+        >
+          Cancel
+        </button>
+
+        <button
+          onClick={handleDeleteTask}
+          className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+        >
+          Delete
+        </button>
+      </div>
+    </Dialog.Panel>
+  </div>
+</Dialog>
 
 
 {/* Modal for User Tasks */}
