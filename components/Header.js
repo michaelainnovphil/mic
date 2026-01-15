@@ -54,6 +54,8 @@ const Header = () => {
             "apanotes@innovphil.com",
             "vgarcia@innovphil.com",
             "mltperez@innovphil.com",
+            "vantoc@innovphil.com",
+            "mclladones@innovphil.com",
           ];
           if (
             allowedEmails.includes(
@@ -68,6 +70,7 @@ const Header = () => {
             "mdbarreda@innovphil.com",
             "aarce@innovphil.com",
             "carce@innovphil.com",
+            "vantoc@innovphil.com"
           ];
           if (
             allowedHREmails.includes(

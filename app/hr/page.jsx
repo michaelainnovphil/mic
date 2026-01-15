@@ -29,7 +29,7 @@ function OverviewContent() {
       "amlinguete@innovphil.com",
       "mcastilla@innovphil.com",
       "mjpanotes@innovphil.com",
-      "smbernardo@innovphil.com",
+      "vantoc@innovphil.com",
     ];
     if (!session || !allowedUsers.includes(session.user.email)) {
       router.replace("/unauthorized");
