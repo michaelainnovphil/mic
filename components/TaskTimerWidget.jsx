@@ -25,10 +25,10 @@ export default function TaskTimerWidget() {
       .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const startShiftTimer = (resetTimer = false) => {
-    if (!shiftStartRef.current || resetTimer) {
+  const startShiftTimer = () => {
+    if (!shiftStartRef.current) {
       const stored = localStorage.getItem("shiftStartAt");
-      if (stored && !resetTimer) shiftStartRef.current = parseInt(stored, 10);
+      if (stored) shiftStartRef.current = parseInt(stored, 10);
       else {
         shiftStartRef.current = Date.now();
         localStorage.setItem("shiftStartAt", shiftStartRef.current);
@@ -143,6 +143,11 @@ export default function TaskTimerWidget() {
     }
 
     prevTaskRef.current = null;
+    localStorage.removeItem("activeTask");
+    setVisible(false);
+    setTask(null);
+    setTaskType("");
+    window.dispatchEvent(new Event("storage"));
   };
 
   const stopShift = async () => {
