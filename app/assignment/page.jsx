@@ -64,13 +64,14 @@ const [taskToDelete, setTaskToDelete] = useState(null);
       "amlinguete@innovphil.com",
       "mcastilla@innovphil.com",
       "mjpanotes@innovphil.com",
-      "smbernardo@innovphil.com",
       "mgpajarillo@innovphil.com",
       "jabayon@innovphil.com",
       "jksanjose@innovphil.com",
       "apanotes@innovphil.com",
       "vgarcia@innovphil.com",
       "mltperez@innovphil.com",
+      "vantoc@innovphil.com",
+      "mclladones@innovphil.com",
     ];
     if (!session || !allowedUsers.includes(session.user.email)) {
       router.replace("/unauthorized");
@@ -108,13 +109,14 @@ const [taskToDelete, setTaskToDelete] = useState(null);
         "amlinguete@innovphil.com",
         "mcastilla@innovphil.com",
         "mjpanotes@innovphil.com",
-        "smbernardo@innovphil.com",
         "mgpajarillo@innovphil.com",
         "jabayon@innovphil.com",
         "jksanjose@innovphil.com",
         "apanotes@innovphil.com",
         "vgarcia@innovphil.com",
         "mltperez@innovphil.com",
+        "vantoc@innovphil.com",
+        "mclladones@innovphil.com",
       ];
 
       if (allowedUsers.includes(currentUserEmail)) {

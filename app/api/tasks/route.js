@@ -5,7 +5,7 @@ import Task from "@/lib/models/Task";
 import { TEAM_MAP } from "@/lib/teamMap";
 import connectToDatabase from "@/lib/mongodb";
 
-// GET tasks (optionally filtered by ?status=workbasket)
+// GET tasks (optionally filtered by ?status=workbasket or ?assignedTo=email)
 export async function GET(req) {
   await connectToDatabase();
   const session = await getServerSession(authOptions);
@@ -16,6 +16,7 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");
+  const assignedTo = searchParams.get("assignedTo");
   const userEmail = session.user.email;
   const userTeam = TEAM_MAP[userEmail] || null;
 
@@ -35,6 +36,11 @@ export async function GET(req) {
     query = {
       assignedTo: { $size: 0 },
       createdBy: { $in: teamMembers },
+    };
+  } else if (assignedTo) {
+    // Filter tasks by assignedTo user
+    query = {
+      assignedTo: assignedTo,
     };
   }
 
