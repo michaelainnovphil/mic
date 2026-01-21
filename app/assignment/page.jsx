@@ -80,8 +80,7 @@ const [taskToDelete, setTaskToDelete] = useState(null);
   useEffect(() => {
     if (currentUserEmail) {
       fetchTeamMembers();
-      fetchAssignedTasks();
-      fetchTeamTasks();
+      fetchTasksData();
     }
   }, [currentUserEmail, refreshKey]);
 
@@ -89,6 +88,71 @@ const [taskToDelete, setTaskToDelete] = useState(null);
     const res = await fetch("/api/users");
     const data = await res.json();
     setTeamMembers(Array.isArray(data.value) ? data.value : []);
+  };
+
+  const fetchTasksData = async () => {
+    try {
+      const [allTasksRes, teamTasksRes] = await Promise.all([
+        fetch("/api/tasks"),
+        fetch("/api/tasks?view=team"),
+      ]);
+
+      const allTasks = await allTasksRes.json();
+      const teamTasksData = await teamTasksRes.json();
+
+      // Process assigned tasks
+      const allowedUsers = [
+        "mdbarreda@innovphil.com",
+        "aarce@innovphil.com",
+        "carce@innovphil.com",
+        "amlinguete@innovphil.com",
+        "mcastilla@innovphil.com",
+        "mjpanotes@innovphil.com",
+        "smbernardo@innovphil.com",
+        "mgpajarillo@innovphil.com",
+        "jabayon@innovphil.com",
+        "jksanjose@innovphil.com",
+        "apanotes@innovphil.com",
+        "vgarcia@innovphil.com",
+        "mltperez@innovphil.com",
+      ];
+
+      if (allowedUsers.includes(currentUserEmail)) {
+        const unassigned = (allTasks || []).filter(
+          (task) =>
+            Array.isArray(task.assignedTo) &&
+            (task.assignedTo.length === 0 || task.assignedTo.includes("unassigned"))
+        );
+        setAssignedTasks(unassigned);
+      } else {
+        const managerTasks = (allTasks || []).filter(
+          (task) => task.createdBy && task.createdBy !== currentUserEmail
+        );
+        setAssignedTasks(managerTasks);
+      }
+
+      // Process team stats
+      const userStats = {};
+      (teamTasksData || []).forEach((task) => {
+        if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
+          task.assignedTo.forEach((user) => {
+            if (!user || user.toLowerCase() === "unassigned") return;
+
+            if (!userStats[user]) {
+              userStats[user] = { total: 0, completed: 0 };
+            }
+            userStats[user].total += 1;
+            if (task.status === "completed") {
+              userStats[user].completed += 1;
+            }
+          });
+        }
+      });
+
+      setTeamTasks(userStats);
+    } catch (err) {
+      console.error("Error fetching tasks data:", err);
+    }
   };
 
   const fetchAssignedTasks = async () => {
@@ -205,64 +269,39 @@ const filterTasksForPeriod = (tasks) => {
   });
 };
 
+  const fetchUserTasks = async (user) => {
+    const [taskRes, logRes] = await Promise.all([
+      fetch(`/api/tasks?assignedTo=${encodeURIComponent(user)}`),
+      fetch(`/api/task-log?user=${encodeURIComponent(user)}`)
+    ]);
 
-  const fetchTeamTasks = async () => {
-    const res = await fetch("/api/tasks");
-    const data = await res.json();
+    const tasks = await taskRes.json();
+    const logs = await logRes.json();
 
-    const userStats = {};
-    (data || []).forEach((task) => {
-      if (Array.isArray(task.assignedTo) && task.assignedTo.length > 0) {
-        task.assignedTo.forEach((user) => {
-          if (!user || user.toLowerCase() === "unassigned") return;
+    const completed = [];
+    const inProgress = [];
+    const pending = [];
 
-          if (!userStats[user]) {
-            userStats[user] = { total: 0, completed: 0 };
-          }
-          userStats[user].total += 1;
-          if (task.status === "completed") {
-            userStats[user].completed += 1;
-          }
-        });
-      }
+    // ✅ Aggregate durations from logs
+    const durations = {};
+    (logs || []).forEach((log) => {
+      if (!log.taskId) return;
+      durations[log.taskId] =
+        (durations[log.taskId] || 0) + (log.durationSeconds || 0);
     });
 
-    setTeamTasks(userStats);
+    // ✅ Categorize tasks
+    (tasks || []).forEach((task) => {
+      if (!task.assignedTo?.includes(user)) return;
+
+      if (task.status === "completed") completed.push(task);
+      else if (task.status === "in-progress") inProgress.push(task);
+      else pending.push(task);
+    });
+
+    setUserTasks({ completed, inProgress, pending });
+    setTaskDurations(durations);
   };
-
-  const fetchUserTasks = async (user) => {
-  const [taskRes, logRes] = await Promise.all([
-    fetch("/api/tasks"),
-    fetch(`/api/task-log?user=${encodeURIComponent(user)}`)
-  ]);
-
-  const tasks = await taskRes.json();
-  const logs = await logRes.json();
-
-  const completed = [];
-  const inProgress = [];
-  const pending = [];
-
-  // ✅ Aggregate durations from logs
-  const durations = {};
-  (logs || []).forEach((log) => {
-    if (!log.taskId) return;
-    durations[log.taskId] =
-      (durations[log.taskId] || 0) + (log.durationSeconds || 0);
-  });
-
-  // ✅ Categorize tasks
-  (tasks || []).forEach((task) => {
-    if (!task.assignedTo?.includes(user)) return;
-
-    if (task.status === "completed") completed.push(task);
-    else if (task.status === "in-progress") inProgress.push(task);
-    else pending.push(task);
-  });
-
-  setUserTasks({ completed, inProgress, pending });
-  setTaskDurations(durations);
-};
 
 
 
@@ -276,71 +315,69 @@ const filterTasksForPeriod = (tasks) => {
   };
 
   const handleAddTask = async () => {
-  if (!title) return alert("Title is required");
+    if (!title) return alert("Title is required");
 
-  const assignedValue =
-    Array.isArray(assignedTo) && assignedTo.length > 0
-      ? assignedTo
-      : ["unassigned"];
+    const assignedValue =
+      Array.isArray(assignedTo) && assignedTo.length > 0
+        ? assignedTo
+        : ["unassigned"];
 
-  // Create a separate task for each user
-  for (const user of assignedValue) {
-    const res = await fetch("/api/tasks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        description,
-        priority,
-        assignedTo: [user], // assign to one user only
-        createdBy: currentUserEmail,
-      }),
-    });
+    // Create a separate task for each user
+    for (const user of assignedValue) {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          description,
+          priority,
+          assignedTo: [user], // assign to one user only
+          createdBy: currentUserEmail,
+        }),
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      alert(data.error || `Failed to add task for ${user}`);
-      return;
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || `Failed to add task for ${user}`);
+        return;
+      }
     }
-  }
 
-  setTitle("");
-  setDescription("");
-  setPriority("Medium");
-  setAssignedTo([]);
-  await fetchAssignedTasks();
-};
+    setTitle("");
+    setDescription("");
+    setPriority("Medium");
+    setAssignedTo([]);
+    await fetchTasksData();
+  };
 
 
-  //  Delete Task
   const handleDeleteTask = async () => {
-  if (!taskToDelete) return;
+    if (!taskToDelete) return;
 
-  try {
-    const durationSeconds = taskDurations[taskToDelete._id] || 0;
+    try {
+      const durationSeconds = taskDurations[taskToDelete._id] || 0;
 
-    const res = await fetch(`/api/tasks/${taskToDelete._id}`, {
-      method: "DELETE",
-    });
+      const res = await fetch(`/api/tasks/${taskToDelete._id}`, {
+        method: "DELETE",
+      });
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error || "Failed to delete task");
-      return;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to delete task");
+        return;
+      }
+
+      await fetchTasksData();
+
+      onTaskDeleted(durationSeconds, taskToDelete.assignedTo?.[0]);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Error deleting task");
+    } finally {
+      setConfirmDeleteOpen(false);
+      setTaskToDelete(null);
     }
-
-    await fetchAssignedTasks();
-    await fetchTeamTasks();
-
-    onTaskDeleted(durationSeconds, taskToDelete.assignedTo?.[0]);
-  } catch (err) {
-    console.error("Delete failed:", err);
-    alert("Error deleting task");
-  } finally {
-    setConfirmDeleteOpen(false);
-    setTaskToDelete(null);
-  }
-};
+  };
 
 
 
