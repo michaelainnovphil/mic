@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
@@ -50,6 +50,8 @@ function AssignmentContent() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 const [taskToDelete, setTaskToDelete] = useState(null);
 
+// Cache for user tasks to avoid refetching
+const userTasksCache = useRef({});
 
 
 
@@ -272,6 +274,14 @@ const filterTasksForPeriod = (tasks) => {
 };
 
   const fetchUserTasks = async (user) => {
+    // Check cache first - if data exists, use it immediately
+    if (userTasksCache.current[user]) {
+      const cachedData = userTasksCache.current[user];
+      setUserTasks(cachedData.tasks);
+      setTaskDurations(cachedData.durations);
+      return;
+    }
+
     const [taskRes, logRes] = await Promise.all([
       fetch(`/api/tasks?assignedTo=${encodeURIComponent(user)}`),
       fetch(`/api/task-log?user=${encodeURIComponent(user)}`)
@@ -301,7 +311,15 @@ const filterTasksForPeriod = (tasks) => {
       else pending.push(task);
     });
 
-    setUserTasks({ completed, inProgress, pending });
+    const userTasksData = { completed, inProgress, pending };
+    
+    // Cache the results
+    userTasksCache.current[user] = {
+      tasks: userTasksData,
+      durations: durations
+    };
+
+    setUserTasks(userTasksData);
     setTaskDurations(durations);
   };
 
@@ -312,8 +330,9 @@ const filterTasksForPeriod = (tasks) => {
 
   const handleUserClick = (user) => {
     setSelectedUser(user);
-    fetchUserTasks(user);
+    setUserTasks({ completed: [], inProgress: [], pending: [] }); // Clear previous tasks
     setIsModalOpen(true);
+    fetchUserTasks(user);
   };
 
   const handleAddTask = async () => {
