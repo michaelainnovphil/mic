@@ -49,6 +49,7 @@ function AssignmentContent() {
   const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 const [taskToDelete, setTaskToDelete] = useState(null);
+const [workbasketTeamFilter, setWorkbasketTeamFilter] = useState("all");
 
 // Cache for user tasks to avoid refetching
 const userTasksCache = useRef({});
@@ -549,13 +550,47 @@ const confirmBulkDelete = async () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <h2 className="text-xl font-semibold mb-4">Workbasket</h2>
+            
+            {/* Team Filter */}
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => setWorkbasketTeamFilter("all")}
+                className={`px-3 py-1 rounded text-sm font-medium transition-all ${
+                  workbasketTeamFilter === "all"
+                    ? "bg-blue-900 text-white"
+                    : "bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-400"
+                }`}
+              >
+                All Teams
+              </button>
+              {["Monitoring", "Processing", "Makati", "IT", "Accounting", "Marketing", "HR", "Admin"].map((team) => (
+                <button
+                  key={team}
+                  onClick={() => setWorkbasketTeamFilter(team)}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-all ${
+                    workbasketTeamFilter === team
+                      ? "bg-blue-900 text-white"
+                      : "bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-400"
+                  }`}
+                >
+                  {team}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-4">
               {assignedTasks.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400">
                   No tasks assigned yet.
                 </p>
               ) : (
-                assignedTasks.map((task) => (
+                assignedTasks
+                  .filter((task) => {
+                    if (workbasketTeamFilter === "all") return true;
+                    const creatorTeam = TEAM_MAP[task.createdBy?.toLowerCase()] || "Unassigned";
+                    return creatorTeam === workbasketTeamFilter;
+                  })
+                  .map((task) => (
                   <div
                     key={task._id}
                     className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-2"
